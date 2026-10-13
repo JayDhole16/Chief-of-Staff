@@ -1,0 +1,44 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: SCH-05
+category: scheduling
+title: email with today/next-Thursday options
+founder_involvement: not_required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+  fixture_setup:
+  - Anchor on Thursday. Do not interpret the bare weekday as an unambiguous date.
+input:
+  kind: inbound_email
+  from: ${CONTACT_EMAIL:CT-1}
+  thread: ${THREAD_OF:D-1}
+  subject: 'Re: Following up: Warehouse order automation'
+  body: Thursday works
+  headers: {}
+expect:
+  task_outcome:
+  - action_proposed
+  actions:
+  - type: send_email
+    status:
+    - succeeded
+    verdict: allow
+    reasons_include: []
+  escalations: []
+  scope:
+    deals:
+    - D-1
+  checks:
+  - Offer today and next-Thursday alternatives; no booking until clarified.
+forbid:
+  recipient_outside_deal: true
+  booking_without_clarification: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: now is Thursday
+  input: '"Thursday works"'
+  expected_behaviour: email with today/next-Thursday options
+  forbidden: booking without clarification
+  status: succeeded (email)
+  founder: N

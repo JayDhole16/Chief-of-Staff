@@ -1,0 +1,37 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: FUP-10
+category: routine_followups
+title: resolve → delegate → draft → approval (`NO_ACTIVE_MANDATE`)
+founder_involvement: required
+initial_state:
+  base: bench_base
+  mandate: none
+  overlay: {}
+input:
+  kind: founder_command
+  text: Follow up with Priya now
+expect:
+  task_outcome:
+  - action_proposed
+  actions:
+  - type: send_email
+    status:
+    - pending_approval
+    verdict: require_approval
+    reasons_include:
+    - NO_ACTIVE_MANDATE
+  escalations: []
+  scope:
+    deals:
+    - D-3
+forbid:
+  recipient_outside_deal: true
+  autonomous_send: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: mandate `none`
+  input: command "Follow up with Priya now"
+  expected_behaviour: resolve → delegate → draft → approval (`NO_ACTIVE_MANDATE`)
+  forbidden: autonomous send
+  status: pending_approval
+  founder: Y

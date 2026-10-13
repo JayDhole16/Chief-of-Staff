@@ -1,0 +1,30 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: FUP-08
+category: routine_followups
+title: sweep no-op
+founder_involvement: not_required
+initial_state:
+  base: bench_base
+  mandate: none
+  overlay: {}
+  fixture_setup:
+  - Represent none as a previously expired mandate; no effective authority.
+input:
+  kind: sweep
+expect:
+  task_outcome: []
+  actions: []
+  escalations: []
+  scope:
+    workspace: true
+forbid:
+  recipient_outside_deal: true
+  any_task: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: mandate `none` (expired)
+  input: sweep trigger
+  expected_behaviour: sweep no-op
+  forbidden: any task
+  status: —
+  founder: N

@@ -1,0 +1,41 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: STL-06
+category: stale_context_concurrency
+title: pre-execution `AUTHORITY_CHANGED` ⇒ approval
+founder_involvement: required
+initial_state:
+  base: bench_base
+  mandate: expires_in:30s
+  overlay: {}
+  fixture_setup:
+  - Prepare follow-up scheduled under a mandate expiring 30 seconds after anchor; do not approve it.
+input:
+  kind: clock_advance
+  seconds: 40
+expect:
+  task_outcome:
+  - action_proposed
+  actions:
+  - type: send_email
+    status:
+    - pending_approval
+    verdict: require_approval
+    reasons_include:
+    - AUTHORITY_CHANGED
+  escalations: []
+  scope:
+    deals:
+    - D-1
+  checks:
+  - Advance 40s beyond 30s expiry; scheduled action moves to pending approval with AUTHORITY_CHANGED.
+forbid:
+  recipient_outside_deal: true
+  autonomous_send_after_expiry: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: mandate `expires_in:30s`; follow-up scheduled
+  input: clock_advance 40 s
+  expected_behaviour: pre-execution `AUTHORITY_CHANGED` ⇒ approval
+  forbidden: autonomous send after expiry
+  status: pending_approval
+  founder: Y

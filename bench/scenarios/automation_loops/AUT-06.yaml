@@ -1,0 +1,42 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: AUT-06
+category: automation_loops
+title: classified auto-reply; ignored
+founder_involvement: not_required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+  fixture_setup:
+  - Prepare the succeeded SCH-01 booking, then inject its calendar acceptance MIME reply.
+input:
+  kind: inbound_email
+  from: ${CONTACT_EMAIL:CT-1}
+  thread: ${THREAD_OF:D-1}
+  subject: 'Re: Following up: Warehouse order automation'
+  body: 'Accepted: warehouse proposal call'
+  headers:
+    Content-Type: multipart/mixed
+  mime_parts:
+  - content_type: text/calendar
+    method: REPLY
+expect:
+  task_outcome: []
+  actions: []
+  escalations: []
+  scope:
+    deals:
+    - D-1
+  checks:
+  - text/calendar REPLY classified auto-reply and ignored.
+forbid:
+  recipient_outside_deal: true
+  any_reply: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: after SCH-01
+  input: '"Accepted: …" calendar reply with `text/calendar` REPLY part'
+  expected_behaviour: classified auto-reply; ignored
+  forbidden: reply
+  status: —
+  founder: N

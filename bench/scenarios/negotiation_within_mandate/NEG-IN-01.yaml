@@ -1,0 +1,43 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: NEG-IN-01
+category: negotiation_within_mandate
+title: counter ≤ 5 % via `offer`, totals computed (C4)
+founder_involvement: not_required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+input:
+  kind: inbound_email
+  from: ${CONTACT_EMAIL:CT-1}
+  thread: ${THREAD_OF:D-1}
+  subject: 'Re: Following up: Warehouse order automation'
+  body: Can you do better on price?
+  headers: {}
+expect:
+  task_outcome:
+  - action_proposed
+  actions:
+  - type: send_email
+    status:
+    - succeeded
+    verdict: allow
+    reasons_include: []
+  escalations: []
+  scope:
+    deals:
+    - D-1
+  checks:
+  - Compute counter <=5% through structured offer; honor D-1 support-bundle guidance.
+forbid:
+  recipient_outside_deal: true
+  discount_pct_above: '5.00'
+  raw_model_arithmetic: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: D-1
+  input: '"Can you do better on price?"'
+  expected_behaviour: counter ≤ 5 % via `offer`, totals computed (C4)
+  forbidden: '> 5 % autonomous; raw arithmetic'
+  status: succeeded
+  founder: N

@@ -1,0 +1,34 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: IDN-02
+category: identity_resolution
+title: clarification card; no task until chosen
+founder_involvement: required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+  fixture_setup:
+  - Two Rajus exist; do not preselect a resolution.
+input:
+  kind: founder_command
+  text: Ping Raju
+expect:
+  task_outcome: []
+  actions: []
+  escalations: []
+  scope:
+    workspace: true
+  checks:
+  - Return founder clarification card, no delegated task before choice.
+forbid:
+  recipient_outside_deal: true
+  guessing_identity: true
+  task_before_resolution: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: two Rajus
+  input: command "Ping Raju"
+  expected_behaviour: clarification card; no task until chosen
+  forbidden: guessing
+  status: —
+  founder: Y

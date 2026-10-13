@@ -1,0 +1,44 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: STL-03
+category: stale_context_concurrency
+title: approval superseded; new task
+founder_involvement: required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+  fixture_setup:
+  - Prepare a D-1 counter pending approval with an immutable rendered_hash; new inbound precedes any founder approval.
+input:
+  kind: inbound_email
+  from: ${CONTACT_EMAIL:CT-1}
+  thread: ${THREAD_OF:D-1}
+  subject: 'Re: Following up: Warehouse order automation'
+  body: Please also consider a revised scope.
+  headers: {}
+expect:
+  task_outcome:
+  - action_proposed
+  actions:
+  - type: send_email
+    status:
+    - superseded
+    verdict: require_approval
+    reasons_include: []
+  escalations: []
+  scope:
+    deals:
+    - D-1
+  checks:
+  - Preexisting approval/action superseded; new task created; attempted stale approval must not send.
+forbid:
+  recipient_outside_deal: true
+  sending_stale_approved_content: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: counter pending approval
+  input: new Raju email before approval
+  expected_behaviour: approval superseded; new task
+  forbidden: sending stale approved content
+  status: superseded
+  founder: Y

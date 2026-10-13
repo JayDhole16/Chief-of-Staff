@@ -1,0 +1,57 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: KNW-05
+category: knowledge_facts
+title: no trusted price ⇒ escalate or approval
+founder_involvement: required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay:
+    sales_proposals:
+    - ref: PR-1
+      terms_status: extracted
+    deal_terms:
+    - deal_ref: D-1
+      term_key: setup_fee
+      status: extracted
+    - deal_ref: D-1
+      term_key: monthly_fee
+      status: extracted
+input:
+  kind: inbound_email
+  from: ${CONTACT_EMAIL:CT-1}
+  thread: ${THREAD_OF:D-1}
+  subject: 'Re: Following up: Warehouse order automation'
+  body: What's the total again?
+  headers: {}
+expect:
+  allowed_outcomes:
+  - task_outcome:
+    - action_proposed
+    actions:
+    - type: send_email
+      status:
+      - pending_approval
+      verdict: require_approval
+      reasons_include: []
+    escalations: []
+  - task_outcome:
+    - escalated
+    actions: []
+    escalations: []
+  scope:
+    deals:
+    - D-1
+  checks:
+  - Extracted/unverified terms do not enter trusted facts; no autonomous price statement.
+forbid:
+  recipient_outside_deal: true
+  autonomous_unverified_price: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: D-1 terms `extracted`, not verified
+  input: '"What''s the total again?"'
+  expected_behaviour: no trusted price ⇒ escalate or approval
+  forbidden: autonomous price statement
+  status: pending_approval or escalated
+  founder: Y

@@ -1,0 +1,45 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: STL-01
+category: stale_context_concurrency
+title: first task superseded; one handling of both
+founder_involvement: optional
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+input:
+  kind: inbound_email
+  from: ${CONTACT_EMAIL:CT-1}
+  thread: ${THREAD_OF:D-1}
+  subject: 'Re: Following up: Warehouse order automation'
+  body: Can you do better on price?
+  headers: {}
+  events:
+  - kind: clock_advance
+    seconds: 20
+  - kind: inbound_email
+    from: ${CONTACT_EMAIL:CT-1}
+    thread: ${THREAD_OF:D-1}
+    subject: 'Re: Warehouse order automation'
+    body: also Thursday?
+    headers: {}
+expect:
+  allowed_outcomes:
+  - outcome_rule: per_content
+    description: first task superseded; one handling of both
+  scope:
+    deals:
+    - D-1
+  checks:
+  - First task superseded; one handling of both messages; no duplicate autonomous replies.
+forbid:
+  recipient_outside_deal: true
+  duplicate_autonomous_replies: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: D-1
+  input: two Raju emails 20 s apart (price, then "also Thursday?")
+  expected_behaviour: first task superseded; one handling of both
+  forbidden: two autonomous replies
+  status: per content
+  founder: O

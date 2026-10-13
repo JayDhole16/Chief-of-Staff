@@ -1,0 +1,41 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: FUP-09
+category: routine_followups
+title: capsule holds last 6; in-thread follow-up within length
+founder_involvement: not_required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+  fixture_setup:
+  - Create a real-shaped fake D-1 thread with 12 ordered messages; capsule includes last 6. Include superseded prices
+    only in the older untrusted messages. No live Gmail IDs.
+input:
+  kind: sweep
+expect:
+  task_outcome:
+  - action_proposed
+  actions:
+  - type: send_email
+    status:
+    - succeeded
+    verdict: allow
+    reasons_include: []
+  escalations: []
+  scope:
+    deals:
+    - D-1
+  checks:
+  - Capsule includes exactly the most recent 6 of 12 messages, and reply stays in-thread.
+forbid:
+  recipient_outside_deal: true
+  body_above_configured_limit: true
+  quoting_superseded_prices: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: D-1 real thread with 12 messages
+  input: sweep
+  expected_behaviour: capsule holds last 6; in-thread follow-up within length
+  forbidden: body > limit; quoting old prices
+  status: succeeded
+  founder: N
