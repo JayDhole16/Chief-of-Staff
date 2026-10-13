@@ -5,17 +5,13 @@
       "path": "AI-Chief-of-Staff-Workbook.pdf",
       "role": "Combined official workbook v1.0, 238 pages",
       "sha256": "188f1ce1e7f824dab53059a6c1871f292508ae2ecf7925b18073d6383c7a1c94",
-      "size_bytes": 6217414,
-      "distribution": "local_only",
-      "required_in_checkout": false
+      "size_bytes": 6217414
     },
     {
       "path": "AI_Chief_of_Staff_Daily_Workload_Plan_Jayraj_Corrected.pdf",
       "role": "Three-person ownership plan, 12 pages",
       "sha256": "5ca443203f61c8c232909ecb9539530ca9208edac64a20ce38050123ecbfd8c8",
-      "size_bytes": 880051,
-      "distribution": "local_only",
-      "required_in_checkout": false
+      "size_bytes": 880051
     },
     {
       "path": "DEVELOPMENT_PLAN.md",
