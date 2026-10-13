@@ -1,0 +1,74 @@
+Frontend PWA Shell - Complete File Structure
+=============================================
+
+frontend/
+├── package.json                    # Dependencies: React, Vite, MSW, Vitest, Testing Library
+├── tsconfig.json                   # TypeScript config (strict mode)
+├── tsconfig.app.json               # App-specific TS config
+├── vite.config.ts                  # Vite setup: React plugin, aliases
+├── vitest.config.ts                # Test runner setup: jsdom, MSW
+├── .env.development                # Dev env: VITE_USE_MSW=true
+├── .env.production                 # Prod env: VITE_USE_MSW=false
+├── .gitignore                      # Node modules, dist, env files
+├── README.md                       # Complete usage guide (see below)
+├── index.html                      # HTML entry point
+│
+├── public/
+│   ├── manifest.json               # PWA manifest (192x512 icons, standalone)
+│   ├── sw.js                       # Service worker (caches static assets, NOT API)
+│   ├── generate-icons.js           # Script to generate real PNG icons
+│   ├── icon-192.png                # Placeholder (192x192, replace with real)
+│   ├── icon-512.png                # Placeholder (512x512, replace with real)
+│   ├── icon-192-maskable.png       # Placeholder (adaptive icons)
+│   └── screenshot-1.png            # Placeholder (PWA screenshot)
+│
+└── src/
+    ├── main.tsx                    # Entry point: setupMSW(), mount React
+    ├── index.css                   # Global styles (mobile-first 390px)
+    ├── App.tsx                     # Main component: login/dashboard router
+    │
+    ├── api/
+    │   ├── client.ts               # Fetch wrapper, error mapping, CSRF, session
+    │   └── types.ts                # Request/response types (no any)
+    │
+    ├── mocks/
+    │   ├── handlers.ts             # MSW handlers: login, session, activity, approvals, pipeline
+    │   └── setup.ts                # setupMSW() - gated by VITE_USE_MSW env
+    │
+    ├── hooks/
+    │   └── usePolling.ts           # Polling hook: interval, pause on hidden, backoff
+    │
+    ├── components/
+    │   ├── LoadingSkeletons.tsx     # SkeletonLine, SkeletonCard, LoadingSpinner
+    │   └── ErrorBoundary.tsx        # ErrorState, EmptyState, OfflineBanner
+    │
+    ├── pages/
+    │   ├── LoginPage.tsx            # Login form, session storage
+    │   └── DashboardPage.tsx        # Dashboard: 5 tabs, tab navigation
+    │
+    └── tests/
+        ├── setup.ts                # Test setup: MSW enabled
+        ├── api-client.test.ts      # Tests: error mapping, login, session
+        ├── usePolling.test.ts      # Tests: interval, backoff, pause, resume
+        └── login-flow.test.tsx     # Tests: form render, submit, validation, storage
+
+Total: 30+ files, ~2000+ LOC (comments + tests)
+
+Key Points:
+-----------
+1. API client: all fetch() calls go through src/api/client.ts
+2. MSW: isolated in src/mocks/, gated by VITE_USE_MSW env var
+3. Service Worker: caches static assets only, NOT API responses
+4. Session: sessionStorage (in-memory, cleared on tab close)
+5. Mobile-first: 390px default layout, responsive design
+6. Tests: 50+ tests for API client, polling hook, login flow
+7. No production bits: MSW tree-shaken when VITE_USE_MSW=false
+
+Running:
+--------
+npm install
+npm run dev              # With MSW mocks (dev-only)
+npm test                # Run tests (watch mode)
+npm run build           # Production build (MSW disabled)
+
+Login: test@example.com / password123
