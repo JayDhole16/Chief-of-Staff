@@ -1,0 +1,19 @@
+# T00.6 authoring data; symbolic references and relative dates require T03.6 mapping.
+workspaces:
+- ref: WS-DEMO
+  name: Nair Automation Studio
+  timezone: Asia/Kolkata
+  settings:
+    working_hours:
+      days:
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      start: 09:30
+      end: '18:30'
+    quiet_after_days: 3
+    followup_min_gap_days: 2
+    meeting_buffer_minutes: 15
+    slot_grid_minutes: 30
