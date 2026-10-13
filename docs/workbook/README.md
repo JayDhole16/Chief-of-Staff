@@ -1,6 +1,6 @@
 # Workbook sources and freeze readiness
 
-The official combined workbook is [AI-Chief-of-Staff-Workbook.pdf](../../AI-Chief-of-Staff-Workbook.pdf), v1.0, 238 pages. The [three-person allocation](../../AI_Chief_of_Staff_Daily_Workload_Plan_Jayraj_Corrected.pdf) assigns YOU/Jairaj/Rehan; use it for human owners. Specific database/backend contracts take priority over summaries; the development plan controls timing. EV claims require actual verification.
+The official combined workbook is the local-only `AI-Chief-of-Staff-Workbook.pdf`, v1.0, 238 pages. The local-only `AI_Chief_of_Staff_Daily_Workload_Plan_Jayraj_Corrected.pdf` assigns YOU/Jairaj/Rehan; use it for human owners. Both PDFs are intentionally excluded from Git at the user's request; local copies are retained and metadata records their hashes. Obtain them privately when needed. Specific database/backend contracts take priority over summaries; the development plan controls timing. EV claims require actual verification.
 
 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) is a byte-for-byte copy of the supplied root standalone plan, with no decisions edited. No other individual canonical Markdown original was found. [Source inventory](source-manifest.md) and [machine-readable hashes](source-manifest.json) identify present sources and nine missing originals. Temporary PDF text extraction is for reading only; it is not an authoritative Markdown export. PDF tables, glyphs and diagrams can be lossy in extraction.
 
