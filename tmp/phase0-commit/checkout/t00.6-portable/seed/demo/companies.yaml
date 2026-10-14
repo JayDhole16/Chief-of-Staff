@@ -1,0 +1,26 @@
+# T00.6 authoring data; symbolic references and relative dates require T03.6 mapping.
+companies:
+- ref: CO-1
+  workspace_ref: WS-DEMO
+  name: Malhotra Logistics
+  domain: malhotralogistics.in
+- ref: CO-2
+  workspace_ref: WS-DEMO
+  name: Iyer Textiles
+  domain: iyertextiles.in
+- ref: CO-3
+  workspace_ref: WS-DEMO
+  name: Brightleaf Clinics
+  domain: brightleafclinics.in
+- ref: CO-4
+  workspace_ref: WS-DEMO
+  name: Kestrel Foods
+  domain: kestrelfoods.in
+- ref: CO-5
+  workspace_ref: WS-DEMO
+  name: Northwind Studio
+  domain: null
+- ref: CO-6
+  workspace_ref: WS-DEMO
+  name: Coastal Realty
+  domain: null

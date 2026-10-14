@@ -1,0 +1,105 @@
+# T00.6 authoring data; symbolic references and relative dates require T03.6 mapping.
+contacts:
+- ref: CT-1
+  workspace_ref: WS-DEMO
+  company_ref: CO-1
+  full_name: Raju Malhotra
+  display_name: Raju
+  timezone: Asia/Kolkata
+  autonomy_mode: mandate_governed
+  do_not_contact: false
+  last_verified_at: anchor
+  notes: null
+- ref: CT-2
+  workspace_ref: WS-DEMO
+  company_ref: CO-2
+  full_name: Raju Iyer
+  display_name: Raju
+  timezone: Asia/Kolkata
+  autonomy_mode: mandate_governed
+  do_not_contact: false
+  last_verified_at: anchor
+  notes: null
+- ref: CT-3
+  workspace_ref: WS-DEMO
+  company_ref: CO-3
+  full_name: Priya Shah
+  display_name: Priya
+  timezone: Europe/London
+  autonomy_mode: mandate_governed
+  do_not_contact: false
+  last_verified_at: anchor
+  notes: null
+- ref: CT-4
+  workspace_ref: WS-DEMO
+  company_ref: CO-4
+  full_name: Arjun Mehta
+  display_name: Arjun
+  timezone: Asia/Kolkata
+  autonomy_mode: approval_required
+  do_not_contact: false
+  last_verified_at: anchor
+  notes: null
+- ref: CT-5
+  workspace_ref: WS-DEMO
+  company_ref: CO-5
+  full_name: Ananya Rao
+  display_name: Ananya
+  timezone: Asia/Kolkata
+  autonomy_mode: mandate_governed
+  do_not_contact: false
+  last_verified_at: anchor
+  notes: null
+- ref: CT-6
+  workspace_ref: WS-DEMO
+  company_ref: CO-6
+  full_name: Farhan Ali
+  display_name: Farhan
+  timezone: Asia/Kolkata
+  autonomy_mode: mandate_governed
+  do_not_contact: false
+  last_verified_at: anchor
+  notes: null
+contact_emails:
+- workspace_ref: WS-DEMO
+  contact_ref: CT-1
+  email: ${DEMO_EMAIL_RAJU}
+  is_primary: true
+  status: active
+  source: seed
+  verified_at: anchor
+- workspace_ref: WS-DEMO
+  contact_ref: CT-2
+  email: raju.iyer@seed.invalid
+  is_primary: true
+  status: active
+  source: seed
+  verified_at: anchor
+- workspace_ref: WS-DEMO
+  contact_ref: CT-3
+  email: ${DEMO_EMAIL_PRIYA}
+  is_primary: true
+  status: active
+  source: seed
+  verified_at: anchor
+- workspace_ref: WS-DEMO
+  contact_ref: CT-4
+  email: ${DEMO_EMAIL_ARJUN}
+  is_primary: true
+  status: active
+  source: seed
+  verified_at: anchor
+- workspace_ref: WS-DEMO
+  contact_ref: CT-5
+  email: ananya.rao@seed.invalid
+  is_primary: true
+  status: active
+  source: seed
+  verified_at: anchor
+- workspace_ref: WS-DEMO
+  contact_ref: CT-6
+  email: farhan.ali@seed.invalid
+  is_primary: true
+  status: active
+  source: seed
+  verified_at: anchor

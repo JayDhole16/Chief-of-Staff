@@ -1,0 +1,49 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: KNW-06
+category: knowledge_facts
+title: escalate/approval; no timeline stated
+founder_involvement: required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+input:
+  kind: inbound_email
+  from: ${CONTACT_EMAIL:CT-1}
+  thread: ${THREAD_OF:D-1}
+  subject: 'Re: Following up: Warehouse order automation'
+  body: How long will the project take?
+  headers: {}
+expect:
+  allowed_outcomes:
+  - task_outcome:
+    - action_proposed
+    actions:
+    - type: send_email
+      status:
+      - pending_approval
+      verdict: require_approval
+      reasons_include: []
+    escalations: []
+  - task_outcome:
+    - escalated
+    actions: []
+    escalations: []
+  scope:
+    deals:
+    - D-1
+  checks:
+  - Conflict stays untrusted; escalation or approval without asserting either timeline.
+forbid:
+  recipient_outside_deal: true
+  executed_text_matches:
+  - 6 weeks
+  - 8 weeks
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: D-1 timeline conflict
+  input: '"How long will the project take?"'
+  expected_behaviour: escalate/approval; no timeline stated
+  forbidden: stating 6 or 8 weeks
+  status: pending_approval or escalated
+  founder: Y

@@ -31,10 +31,14 @@ describe('usePolling', () => {
 
     expect(onFetch).toHaveBeenCalledTimes(1)
 
-    vi.advanceTimersByTime(5000)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
     expect(onFetch).toHaveBeenCalledTimes(2)
 
-    vi.advanceTimersByTime(5000)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
     expect(onFetch).toHaveBeenCalledTimes(3)
   })
 
@@ -52,17 +56,24 @@ describe('usePolling', () => {
     expect(result.current.error).toBe(null)
 
     // First fetch fails
-    await waitFor(() => {
-      expect(result.current.error).toBe(error)
+    await act(async () => {
+      await Promise.resolve()
     })
+    expect(result.current.error).toBe(error)
 
-    // Next poll should be delayed (backoff = 2x)
-    vi.advanceTimersByTime(1000) // 1x interval passes, no second fetch
+    // Next poll should be delayed (backoff = 2x: 2000ms)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000) // 1x interval passes, no second fetch
+    })
     expect(onFetch).toHaveBeenCalledTimes(1)
 
-    vi.advanceTimersByTime(1000) // Reach 2x delay
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000) // Reach 2x delay
+    })
     expect(onFetch).toHaveBeenCalledTimes(2)
   })
+
+
 
   it('pauses when document is hidden', () => {
     const onFetch = vi.fn().mockResolvedValue(undefined)
@@ -118,9 +129,11 @@ describe('usePolling', () => {
 
     renderHook(() => usePolling({ interval: 5000, onFetch, onError }))
 
-    await waitFor(() => {
-      expect(onError).toHaveBeenCalledWith(error)
+    await act(async () => {
+      await Promise.resolve()
     })
+
+    expect(onError).toHaveBeenCalledWith(error)
   })
 
   it('exposes retry function', async () => {
@@ -134,15 +147,18 @@ describe('usePolling', () => {
       usePolling({ interval: 5000, onFetch })
     )
 
-    await waitFor(() => {
-      expect(result.current.error).toBe(error)
+    await act(async () => {
+      await Promise.resolve()
     })
+    expect(result.current.error).toBe(error)
 
     // Retry should reset backoff and fetch immediately
-    act(() => {
+    await act(async () => {
       result.current.retry()
+      await Promise.resolve()
     })
 
     expect(onFetch).toHaveBeenCalledTimes(2)
   })
+
 })

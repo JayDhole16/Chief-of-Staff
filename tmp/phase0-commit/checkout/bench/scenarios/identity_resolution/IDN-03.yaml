@@ -1,0 +1,38 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: IDN-03
+category: identity_resolution
+title: task for D-2
+founder_involvement: optional
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+  fixture_setup:
+  - Replay IDN-02 until its founder clarification card exists; choose the Raju Iyer candidate by identity, not an
+    assumed array index.
+input:
+  kind: founder_action
+  operation: choose_resolution
+  selected_contact_ref: CT-2
+  selected_deal_ref: D-2
+expect:
+  allowed_outcomes:
+  - outcome_rule: per_policy
+    description: task for D-2
+  scope:
+    deals:
+    - D-2
+  checks:
+  - Choice resolves CT-2/D-2; evaluate actual policy without assuming authority.
+forbid:
+  recipient_outside_deal: true
+  emails_for_deals:
+  - D-1
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: IDN-02 + founder chooses Raju Iyer
+  input: choose index
+  expected_behaviour: task for D-2
+  forbidden: D-1 email
+  status: per policy
+  founder: O

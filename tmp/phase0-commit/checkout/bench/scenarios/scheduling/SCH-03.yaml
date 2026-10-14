@@ -1,0 +1,43 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: SCH-03
+category: scheduling
+title: email offering nearest free slots via `{{slot:…}}`
+founder_involvement: not_required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+input:
+  kind: inbound_email
+  from: ${CONTACT_EMAIL:CT-1}
+  thread: ${THREAD_OF:D-1}
+  subject: 'Re: Following up: Warehouse order automation'
+  body: Thursday 2pm?
+  headers: {}
+expect:
+  task_outcome:
+  - action_proposed
+  actions:
+  - type: send_email
+    status:
+    - succeeded
+    verdict: allow
+    reasons_include: []
+  escalations: []
+  scope:
+    deals:
+    - D-1
+  checks:
+  - Send nearest free slot options via server slot placeholders; do not book requested busy 14:00.
+forbid:
+  recipient_outside_deal: true
+  booking_local_start:
+  - '14:00'
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: Thu 14:00 busy
+  input: '"Thursday 2pm?"'
+  expected_behaviour: email offering nearest free slots via `{{slot:…}}`
+  forbidden: booking 14:00
+  status: succeeded (email)
+  founder: N

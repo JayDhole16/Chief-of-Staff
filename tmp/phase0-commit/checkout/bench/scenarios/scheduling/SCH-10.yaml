@@ -1,0 +1,43 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: SCH-10
+category: scheduling
+title: polite decline + in-hours options
+founder_involvement: not_required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+input:
+  kind: inbound_email
+  from: ${CONTACT_EMAIL:CT-1}
+  thread: ${THREAD_OF:D-1}
+  subject: 'Re: Following up: Warehouse order automation'
+  body: How about 9 PM?
+  headers: {}
+expect:
+  task_outcome:
+  - action_proposed
+  actions:
+  - type: send_email
+    status:
+    - succeeded
+    verdict: allow
+    reasons_include: []
+  escalations: []
+  scope:
+    deals:
+    - D-1
+  checks:
+  - Decline out-of-hours request politely; offer in-hours options.
+forbid:
+  recipient_outside_deal: true
+  autonomous_booking_local_start:
+  - '21:00'
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: —
+  input: '"How about 9 PM?"'
+  expected_behaviour: polite decline + in-hours options
+  forbidden: autonomous booking at 21:00
+  status: succeeded (email)
+  founder: N

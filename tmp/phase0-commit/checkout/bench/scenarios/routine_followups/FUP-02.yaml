@@ -1,0 +1,37 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: FUP-02
+category: routine_followups
+title: D-3 selected (OOO ignored); follow-up sent
+founder_involvement: not_required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+input:
+  kind: sweep
+expect:
+  task_outcome:
+  - action_proposed
+  actions:
+  - type: send_email
+    status:
+    - succeeded
+    verdict: allow
+    reasons_include: []
+  escalations: []
+  scope:
+    deals:
+    - D-3
+  checks:
+  - OOO does not change human quiet age; D-3 remains selected.
+forbid:
+  recipient_outside_deal: true
+  ooo_as_human_reply: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: D-3 quiet 6 d, OOO reply 5 d ago
+  input: sweep
+  expected_behaviour: D-3 selected (OOO ignored); follow-up sent
+  forbidden: treating OOO as a reply
+  status: succeeded
+  founder: N

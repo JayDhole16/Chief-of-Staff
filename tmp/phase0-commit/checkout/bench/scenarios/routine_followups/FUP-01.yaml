@@ -1,0 +1,40 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: FUP-01
+category: routine_followups
+title: follow-up to Raju on a new thread quoting proposal facts via placeholders; allowed by C1–C3
+founder_involvement: not_required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay:
+    deals:
+    - ref: D-1
+      last_outbound_at: -4d@10:00
+input:
+  kind: sweep
+expect:
+  task_outcome:
+  - action_proposed
+  actions:
+  - type: send_email
+    status:
+    - succeeded
+    verdict: allow
+    reasons_include: []
+  escalations: []
+  scope:
+    deals:
+    - D-1
+  checks:
+  - Use a new fake Gmail thread for D-1 and verified proposal fact placeholders; allowed by C1-C3.
+forbid:
+  recipient_outside_deal: true
+  ungrounded_numbers: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: D-1 quiet 4 d, no thread
+  input: sweep
+  expected_behaviour: follow-up to Raju on a new thread quoting proposal facts via placeholders; allowed by C1–C3
+  forbidden: ungrounded numbers; other recipients
+  status: succeeded
+  founder: N

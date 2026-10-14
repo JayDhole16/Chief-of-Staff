@@ -1,0 +1,42 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: SCH-06
+category: scheduling
+title: email with 3 options on different days
+founder_involvement: not_required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+input:
+  kind: inbound_email
+  from: ${CONTACT_EMAIL:CT-1}
+  thread: ${THREAD_OF:D-1}
+  subject: 'Re: Following up: Warehouse order automation'
+  body: sometime next week
+  headers: {}
+expect:
+  task_outcome:
+  - action_proposed
+  actions:
+  - type: send_email
+    status:
+    - succeeded
+    verdict: allow
+    reasons_include: []
+  escalations: []
+  scope:
+    deals:
+    - D-1
+  checks:
+  - Offer 3 slots on different days in next week; no booking.
+forbid:
+  recipient_outside_deal: true
+  any_booking: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: —
+  input: '"sometime next week"'
+  expected_behaviour: email with 3 options on different days
+  forbidden: booking
+  status: succeeded (email)
+  founder: N

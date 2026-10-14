@@ -1,0 +1,32 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: FUP-06
+category: routine_followups
+title: excluded
+founder_involvement: not_required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay:
+    deals:
+    - ref: D-6
+      stage: won
+input:
+  kind: sweep
+expect:
+  task_outcome: []
+  actions: []
+  escalations: []
+  scope:
+    deals:
+    - D-6
+forbid:
+  recipient_outside_deal: true
+  any_email: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: D-6 won
+  input: sweep
+  expected_behaviour: excluded
+  forbidden: any email
+  status: —
+  founder: N
