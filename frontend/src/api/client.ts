@@ -42,19 +42,30 @@ export async function apiCall<T>(
     headers['X-Session-ID'] = sessionId
   }
 
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS)
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const timeout = controller ? setTimeout(() => controller.abort(), API_TIMEOUT_MS) : null
 
   try {
-    const response = await fetch(url, {
+    const fetchOptions: RequestInit = {
       method,
       headers,
       body: options.body ? JSON.stringify(options.body) : undefined,
-      signal: controller.signal,
       credentials: 'include', // Send cookies with requests
-    })
+    }
+    let response: Response
+    try {
+      response = await fetch(url, { ...fetchOptions, signal: controller?.signal })
+    } catch (fetchErr) {
+      if (fetchErr instanceof TypeError && fetchErr.message.includes('AbortSignal')) {
+        response = await fetch(url, fetchOptions)
+      } else {
+        throw fetchErr
+      }
+    }
 
-    clearTimeout(timeout)
+    if (timeout) clearTimeout(timeout)
+
+
 
     // Map HTTP status to error code
     const errorCode = mapStatusToErrorCode(response.status)
@@ -67,7 +78,7 @@ export async function apiCall<T>(
     const data = await response.json()
     return data as T
   } catch (error) {
-    clearTimeout(timeout)
+    if (timeout) clearTimeout(timeout)
 
     if (error instanceof APIClientError) {
       throw error

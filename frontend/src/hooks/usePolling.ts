@@ -21,26 +21,35 @@ export function usePolling({ interval, onFetch, onError }: UsePollingOptions): {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const backoffRef = useRef(1) // Exponential backoff multiplier
 
+  const onFetchRef = useRef(onFetch)
+  onFetchRef.current = onFetch
+
+  const onErrorRef = useRef(onError)
+  onErrorRef.current = onError
+
   const poll = async () => {
     try {
       setIsLoading(true)
       setError(null)
-      await onFetch()
+      await onFetchRef.current()
       backoffRef.current = 1 // Reset backoff on success
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))
       setError(error)
-      onError?.(error)
+      onErrorRef.current?.(error)
       backoffRef.current = Math.min(backoffRef.current * 2, 10) // Cap at 10x
     } finally {
       setIsLoading(false)
+      scheduleNextPoll()
     }
   }
 
   const scheduleNextPoll = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
     const delay = interval * backoffRef.current
-    timeoutRef.current = setTimeout(poll, delay)
+    timeoutRef.current = setTimeout(() => {
+      poll()
+    }, delay)
   }
 
   const handleVisibilityChange = () => {
@@ -57,9 +66,6 @@ export function usePolling({ interval, onFetch, onError }: UsePollingOptions): {
     // Initial poll
     poll()
 
-    // Schedule next poll
-    scheduleNextPoll()
-
     // Listen to visibility changes
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
@@ -68,7 +74,8 @@ export function usePolling({ interval, onFetch, onError }: UsePollingOptions): {
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [interval, onFetch])
+  }, [interval])
+
 
   return {
     isLoading,

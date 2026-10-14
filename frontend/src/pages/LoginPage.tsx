@@ -75,6 +75,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps): JSX.Element {
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: '1rem' }}>
             <label
+              htmlFor="email"
               style={{
                 display: 'block',
                 marginBottom: '0.5rem',
@@ -86,6 +87,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps): JSX.Element {
               Email
             </label>
             <input
+              id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -104,6 +106,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps): JSX.Element {
 
           <div style={{ marginBottom: '1.5rem' }}>
             <label
+              htmlFor="password"
               style={{
                 display: 'block',
                 marginBottom: '0.5rem',
@@ -115,6 +118,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps): JSX.Element {
               Password
             </label>
             <input
+              id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

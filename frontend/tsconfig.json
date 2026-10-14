@@ -12,6 +12,7 @@
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "noEmit": true,
+    "types": ["vite/client", "vitest/globals"],
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
@@ -19,6 +20,5 @@
       "@/mocks/*": ["src/mocks/*"]
     }
   },
-  "include": ["src"],
-  "references": [{ "path": "./tsconfig.app.json" }]
+  "include": ["src"]
 }
