@@ -1,0 +1,280 @@
+# T00.6 authoring data; symbolic references and relative dates require T03.6 mapping.
+email_threads:
+- ref: TH-2
+  workspace_ref: WS-DEMO
+  gmail_thread_id: seed-thread-2
+  is_synthetic: true
+  deal_ref: D-2
+  subject: Invoice reconciliation bot
+  last_outbound_at: -1d
+  last_inbound_at: -1d
+  last_message_at: -1d
+- ref: TH-3
+  workspace_ref: WS-DEMO
+  gmail_thread_id: seed-thread-3
+  is_synthetic: true
+  deal_ref: D-3
+  subject: Appointment reminder automation
+  last_outbound_at: -6d
+  last_inbound_at: null
+  last_message_at: -5d
+- ref: TH-4
+  workspace_ref: WS-DEMO
+  gmail_thread_id: seed-thread-4
+  is_synthetic: true
+  deal_ref: D-4
+  subject: Inventory sync
+  last_outbound_at: -5d
+  last_inbound_at: null
+  last_message_at: -5d
+- ref: TH-5
+  workspace_ref: WS-DEMO
+  gmail_thread_id: seed-thread-5
+  is_synthetic: true
+  deal_ref: D-5
+  subject: PR-5 (scope unspecified in source)
+  last_outbound_at: -1d
+  last_inbound_at: -2d
+  last_message_at: -1d
+email_messages:
+- ref: MSG-1
+  workspace_ref: WS-DEMO
+  thread_ref: TH-2
+  gmail_message_id: seed-msg-1
+  direction: outbound
+  from_email_normalized: ${DEMO_FOUNDER_EMAIL}
+  from_name: Meera Nair
+  to_emails:
+  - raju.iyer@seed.invalid
+  cc_emails: []
+  subject: 'Re: Invoice reconciliation bot'
+  body_text: 'Hello Raju,
+
+    Please review proposal PR-2: Invoice reconciliation bot.
+
+    Meera'
+  internal_date: -9d
+  headers: {}
+  classification: self_sent
+  processing_status: processed
+  resolved_contact_ref: CT-2
+  resolved_deal_ref: D-2
+- ref: MSG-2
+  workspace_ref: WS-DEMO
+  thread_ref: TH-3
+  gmail_message_id: seed-msg-2
+  direction: outbound
+  from_email_normalized: ${DEMO_FOUNDER_EMAIL}
+  from_name: Meera Nair
+  to_emails:
+  - ${DEMO_EMAIL_PRIYA}
+  cc_emails: []
+  subject: 'Re: Appointment reminder automation'
+  body_text: 'Hello Priya,
+
+    Please review proposal PR-3: Appointment reminder automation.
+
+    Meera'
+  internal_date: -6d
+  headers: {}
+  classification: self_sent
+  processing_status: processed
+  resolved_contact_ref: CT-3
+  resolved_deal_ref: D-3
+- ref: MSG-3
+  workspace_ref: WS-DEMO
+  thread_ref: TH-4
+  gmail_message_id: seed-msg-3
+  direction: outbound
+  from_email_normalized: ${DEMO_FOUNDER_EMAIL}
+  from_name: Meera Nair
+  to_emails:
+  - ${DEMO_EMAIL_ARJUN}
+  cc_emails: []
+  subject: 'Re: Inventory sync'
+  body_text: 'Hello Arjun,
+
+    Please review proposal PR-4: Inventory sync.
+
+    Meera'
+  internal_date: -5d
+  headers: {}
+  classification: self_sent
+  processing_status: processed
+  resolved_contact_ref: CT-4
+  resolved_deal_ref: D-4
+- ref: MSG-4
+  workspace_ref: WS-DEMO
+  thread_ref: TH-5
+  gmail_message_id: seed-msg-4
+  direction: outbound
+  from_email_normalized: ${DEMO_FOUNDER_EMAIL}
+  from_name: Meera Nair
+  to_emails:
+  - ananya.rao@seed.invalid
+  cc_emails: []
+  subject: 'Re: PR-5 (scope unspecified in source)'
+  body_text: 'Hello Ananya,
+
+    Please review proposal PR-5: PR-5 (scope unspecified in source).
+
+    Meera'
+  internal_date: -3d
+  headers: {}
+  classification: self_sent
+  processing_status: processed
+  resolved_contact_ref: CT-5
+  resolved_deal_ref: D-5
+- ref: MSG-5
+  workspace_ref: WS-DEMO
+  thread_ref: TH-2
+  gmail_message_id: seed-msg-5
+  direction: inbound
+  from_email_normalized: raju.iyer@seed.invalid
+  from_name: Raju Iyer
+  to_emails:
+  - ${DEMO_FOUNDER_EMAIL}
+  cc_emails: []
+  subject: 'Re: Invoice reconciliation bot'
+  body_text: 'We are reviewing the invoice reconciliation proposal.
+
+    Forwarded note from Lakshmi Iyer (CFO): Please discuss the invoice reconciliation
+    scope with Raju Iyer.
+
+    Raju'
+  internal_date: -2d
+  headers: {}
+  classification: human
+  processing_status: processed
+  resolved_contact_ref: CT-2
+  resolved_deal_ref: D-2
+- ref: MSG-6
+  workspace_ref: WS-DEMO
+  thread_ref: TH-2
+  gmail_message_id: seed-msg-6
+  direction: outbound
+  from_email_normalized: ${DEMO_FOUNDER_EMAIL}
+  from_name: Meera Nair
+  to_emails:
+  - raju.iyer@seed.invalid
+  cc_emails: []
+  subject: 'Re: Invoice reconciliation bot'
+  body_text: 'Thanks Raju. Which scope questions would you like to discuss?
+
+    Meera'
+  internal_date: -1d
+  headers: {}
+  classification: self_sent
+  processing_status: processed
+  resolved_contact_ref: CT-2
+  resolved_deal_ref: D-2
+- ref: MSG-7
+  workspace_ref: WS-DEMO
+  thread_ref: TH-2
+  gmail_message_id: seed-msg-7
+  direction: inbound
+  from_email_normalized: raju.iyer@seed.invalid
+  from_name: Raju Iyer
+  to_emails:
+  - ${DEMO_FOUNDER_EMAIL}
+  cc_emails: []
+  subject: 'Re: Invoice reconciliation bot'
+  body_text: 'We are still discussing the scope. I will send our questions.
+
+    Raju'
+  internal_date: -1d
+  headers: {}
+  classification: human
+  processing_status: processed
+  resolved_contact_ref: CT-2
+  resolved_deal_ref: D-2
+- ref: MSG-8
+  workspace_ref: WS-DEMO
+  thread_ref: TH-3
+  gmail_message_id: seed-msg-8
+  direction: inbound
+  from_email_normalized: ${DEMO_EMAIL_PRIYA}
+  from_name: Priya Shah
+  to_emails:
+  - ${DEMO_FOUNDER_EMAIL}
+  cc_emails: []
+  subject: 'Re: Appointment reminder automation'
+  body_text: 'I am out of the office and will respond when I return.
+
+    Priya'
+  internal_date: -5d
+  headers:
+    Auto-Submitted: auto-replied
+    X-Autoreply: 'yes'
+  classification: auto_reply
+  processing_status: ignored
+  resolved_contact_ref: CT-3
+  resolved_deal_ref: D-3
+- ref: MSG-9
+  workspace_ref: WS-DEMO
+  thread_ref: TH-5
+  gmail_message_id: seed-msg-9
+  direction: inbound
+  from_email_normalized: ananya.rao@seed.invalid
+  from_name: Ananya Rao
+  to_emails:
+  - ${DEMO_FOUNDER_EMAIL}
+  cc_emails: []
+  subject: 'Re: PR-5 (scope unspecified in source)'
+  body_text: 'Can we discuss the proposal scope before deciding?
+
+    Ananya'
+  internal_date: -2d
+  headers: {}
+  classification: human
+  processing_status: processed
+  resolved_contact_ref: CT-5
+  resolved_deal_ref: D-5
+- ref: MSG-10
+  workspace_ref: WS-DEMO
+  thread_ref: TH-5
+  gmail_message_id: seed-msg-10
+  direction: outbound
+  from_email_normalized: ${DEMO_FOUNDER_EMAIL}
+  from_name: Meera Nair
+  to_emails:
+  - ananya.rao@seed.invalid
+  cc_emails: []
+  subject: 'Re: PR-5 (scope unspecified in source)'
+  body_text: 'Thanks Ananya. Please share the scope questions you would like to discuss.
+
+    Meera'
+  internal_date: -1d
+  headers: {}
+  classification: self_sent
+  processing_status: processed
+  resolved_contact_ref: CT-5
+  resolved_deal_ref: D-5
+live_mailbox_plan:
+  priya_vacation_responder: must be enabled manually; not configured by this content
+  arjun_mailbox: team inbox +arjun alias supplied through ${DEMO_EMAIL_ARJUN}
+  lakshmi: mentioned only in forwarded body; not a CRM contact or authorized recipient
+post_seed_replay_intents:
+- deal_ref: D-1
+  after: follow-up
+  from: ${DEMO_EMAIL_RAJU}
+  intent: Push back on price and claim Meera promised 20% on a call. Customer assertion
+    is untrusted; require approval.
+- deal_ref: D-1
+  after: approved grounded counter
+  from: ${DEMO_EMAIL_RAJU}
+  intent: Accept and suggest Thursday afternoon. Resolve next:thu from anchor; expected
+    15:00-15:30 IST.
+expected_sweep:
+  included:
+  - D-1
+  - D-3
+  - D-4
+  excluded:
+  - D-2
+  - D-5
+  - D-6
+  approval_required:
+  - D-4
+  note: OOO is not human inbound; D-1 begins without an email thread. Replay intents
+    are not initial-state messages.

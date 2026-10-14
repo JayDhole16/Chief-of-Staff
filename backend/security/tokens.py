@@ -146,3 +146,4 @@ def verify_slot_token(
         raise SlotTokenExpiredError(f"Slot token expired at {exp_epoch}, current time {now_epoch}")
 
     return payload
+

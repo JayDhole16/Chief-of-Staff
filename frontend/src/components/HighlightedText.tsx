@@ -161,3 +161,4 @@ export function HighlightedText({ text, facts, flags = [] }: HighlightedTextProp
     </div>
   )
 }
+

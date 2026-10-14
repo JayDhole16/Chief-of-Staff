@@ -1,0 +1,9 @@
+# T00.6 authoring data; symbolic references and relative dates require T03.6 mapping.
+founders:
+- ref: F-DEMO
+  workspace_ref: WS-DEMO
+  email: ${DEMO_FOUNDER_EMAIL}
+  display_name: Meera Nair
+  signature_name: Meera
+  business_name: Nair Automation Studio
+  timezone: Asia/Kolkata

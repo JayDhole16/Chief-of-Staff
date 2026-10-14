@@ -1,0 +1,46 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: AUT-03
+category: automation_loops
+title: '`LOOP_SUSPECTED` block + pause + escalation'
+founder_involvement: required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+  fixture_setup:
+  - Replay three immediate customer-bot acknowledgements after our sends on D-1; existing loop state is built from
+    these exchanges. Attempt a fourth reply to verify blocking, pause and escalation.
+input:
+  kind: inbound_email
+  from: ${CONTACT_EMAIL:CT-1}
+  thread: ${THREAD_OF:D-1}
+  subject: 'Re: Following up: Warehouse order automation'
+  body: Automated acknowledgement. Please reply to confirm.
+  headers: {}
+expect:
+  task_outcome:
+  - action_proposed
+  actions:
+  - type: send_email
+    status:
+    - blocked
+    verdict: block
+    reasons_include:
+    - LOOP_SUSPECTED
+  escalations: []
+  scope:
+    deals:
+    - D-1
+  checks:
+  - Fourth autonomous reply blocked by LOOP_SUSPECTED; contact paused and founder escalation exists.
+forbid:
+  recipient_outside_deal: true
+  fourth_autonomous_reply: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: D-1
+  input: customer's bot replies instantly 3× after our sends
+  expected_behaviour: '`LOOP_SUSPECTED` block + pause + escalation'
+  forbidden: 4th autonomous reply
+  status: blocked
+  founder: Y

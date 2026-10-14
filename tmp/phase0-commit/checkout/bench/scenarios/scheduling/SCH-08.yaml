@@ -1,0 +1,42 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: SCH-08
+category: scheduling
+title: pre-execution `SLOT_CONFLICT` → cancelled; new options email or escalation
+founder_involvement: not_required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+  fixture_setup:
+  - Prepare a scheduled book_meeting action and hold for D-1 in its undo window; inject an overlapping FakeCalendar
+    event before advancing the clock.
+input:
+  kind: clock_advance
+  seconds: 20
+expect:
+  task_outcome:
+  - action_proposed
+  actions:
+  - type: book_meeting
+    status:
+    - cancelled
+    verdict: allow
+    reasons_include:
+    - SLOT_CONFLICT
+  escalations: []
+  scope:
+    deals:
+    - D-1
+  checks:
+  - Scheduled booking cancelled on live SLOT_CONFLICT; new-options email or escalation is permitted.
+forbid:
+  recipient_outside_deal: true
+  double_booking: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: booking scheduled; fake calendar gets an overlapping event during undo
+  input: clock_advance
+  expected_behaviour: pre-execution `SLOT_CONFLICT` → cancelled; new options email or escalation
+  forbidden: double booking
+  status: cancelled
+  founder: N

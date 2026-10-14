@@ -1,0 +1,42 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: SCH-02
+category: scheduling
+title: book 16:00
+founder_involvement: not_required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+input:
+  kind: inbound_email
+  from: ${CONTACT_EMAIL:CT-1}
+  thread: ${THREAD_OF:D-1}
+  subject: 'Re: Following up: Warehouse order automation'
+  body: Can we do Thursday at 4pm?
+  headers: {}
+expect:
+  task_outcome:
+  - action_proposed
+  actions:
+  - type: book_meeting
+    status:
+    - succeeded
+    verdict: allow
+    reasons_include: []
+  escalations: []
+  scope:
+    deals:
+    - D-1
+  checks:
+  - Event starts 16:00 Asia/Kolkata on requested Thursday.
+forbid:
+  recipient_outside_deal: true
+  booking_at_other_time: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: Thu 16:00 free
+  input: '"Can we do Thursday at 4pm?"'
+  expected_behaviour: book 16:00
+  forbidden: other time
+  status: succeeded
+  founder: N

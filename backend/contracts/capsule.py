@@ -186,3 +186,4 @@ class ContextCapsule(BaseModel):
     authority: CapsuleAuthority
     rules: list[str] = Field(default_factory=list)
     limits: CapsuleLimits = CapsuleLimits()
+

@@ -240,3 +240,4 @@ export function ReceiptView({ receipt, onClose }: ReceiptViewProps): JSX.Element
     </div>
   )
 }
+

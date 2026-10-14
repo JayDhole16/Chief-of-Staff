@@ -153,3 +153,4 @@ class EscalationsResponse(BaseModel):
 
     escalations: list[EscalationItem]
     count: int
+

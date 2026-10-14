@@ -137,3 +137,4 @@ describe('ReceiptView (T09.5)', () => {
     expect(onClose).toHaveBeenCalled()
   })
 })
+

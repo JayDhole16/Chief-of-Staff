@@ -227,3 +227,4 @@ def test_extra_fields_forbidden():
             "created_at": "2026-10-15T10:00:00Z",
             "unsupported_field": "disallowed",
         })
+

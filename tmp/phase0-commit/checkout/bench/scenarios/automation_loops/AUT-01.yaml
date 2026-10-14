@@ -1,0 +1,38 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: AUT-01
+category: automation_loops
+title: ignored; quietness unchanged
+founder_involvement: not_required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+input:
+  kind: inbound_email
+  from: ${CONTACT_EMAIL:CT-3}
+  thread: ${THREAD_OF:D-3}
+  subject: 'Re: Proposal discussion'
+  body: I am out of the office and will respond when I return.
+  headers:
+    Auto-Submitted: auto-replied
+expect:
+  task_outcome: []
+  actions: []
+  escalations: []
+  scope:
+    deals:
+    - D-3
+  checks:
+  - Ignored classification; no human activity/cadence update and no reply.
+forbid:
+  recipient_outside_deal: true
+  any_reply: true
+  human_activity_update: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: D-3
+  input: 'OOO with `Auto-Submitted: auto-replied`'
+  expected_behaviour: ignored; quietness unchanged
+  forbidden: reply; activity update
+  status: —
+  founder: N

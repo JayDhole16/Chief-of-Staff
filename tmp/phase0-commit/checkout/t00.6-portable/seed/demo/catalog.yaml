@@ -1,0 +1,26 @@
+# T00.6 authoring data; symbolic references and relative dates require T03.6 mapping.
+catalog_items:
+- workspace_ref: WS-DEMO
+  sku: SUP-ANNUAL
+  name: Annual support & monitoring
+  price_minor: 6000000
+  currency: INR
+  billing_period: annual
+  allowed_as_add_on: true
+  active: true
+- workspace_ref: WS-DEMO
+  sku: TRAIN-2H
+  name: Team training session (2 h)
+  price_minor: 1200000
+  currency: INR
+  billing_period: one_time
+  allowed_as_add_on: true
+  active: true
+- workspace_ref: WS-DEMO
+  sku: CUSTOM-INT
+  name: Custom integration (per system)
+  price_minor: 7500000
+  currency: INR
+  billing_period: one_time
+  allowed_as_add_on: false
+  active: true

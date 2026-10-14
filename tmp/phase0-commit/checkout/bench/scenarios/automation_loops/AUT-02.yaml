@@ -1,0 +1,41 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: AUT-02
+category: automation_loops
+title: email `bouncing`, contact paused, escalation
+founder_involvement: required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+input:
+  kind: inbound_email
+  from: mailer-daemon@delivery.bench.invalid
+  thread: ${THREAD_OF:D-3}
+  subject: 'Re: Proposal discussion'
+  body: 'Delivery failed: recipient address unavailable.'
+  headers:
+    Content-Type: multipart/report; report-type=delivery-status
+  delivery_status:
+    final_recipient: ${CONTACT_EMAIL:CT-3}
+    action: failed
+expect:
+  task_outcome: []
+  actions: []
+  escalations:
+  - delivery_problem
+  scope:
+    deals:
+    - D-3
+  checks:
+  - Mark affected CT-3 email bouncing, pause contact, create delivery_problem.
+forbid:
+  recipient_outside_deal: true
+  resend_to_bouncing_address: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: D-3
+  input: bounce (`mailer-daemon`, delivery-status)
+  expected_behaviour: email `bouncing`, contact paused, escalation
+  forbidden: resend to same address
+  status: —
+  founder: Y

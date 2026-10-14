@@ -1,0 +1,49 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: IDN-01
+category: identity_resolution
+title: resolved to D-1 (margin ≥ 0.2); task for D-1
+founder_involvement: optional
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay: {}
+input:
+  kind: founder_command
+  text: Ping Raju about the warehouse proposal
+expect:
+  allowed_outcomes:
+  - task_outcome:
+    - action_proposed
+    actions:
+    - type: send_email
+      status:
+      - succeeded
+      verdict: allow
+      reasons_include: []
+    escalations: []
+  - task_outcome:
+    - action_proposed
+    actions:
+    - type: send_email
+      status:
+      - pending_approval
+      verdict: require_approval
+      reasons_include: []
+    escalations: []
+  scope:
+    deals:
+    - D-1
+  checks:
+  - Resolution margin >=0.2 selects D-1, never D-2.
+forbid:
+  recipient_outside_deal: true
+  tasks_for_deals:
+  - D-2
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: two Rajus
+  input: command "Ping Raju about the warehouse proposal"
+  expected_behaviour: resolved to D-1 (margin ≥ 0.2); task for D-1
+  forbidden: D-2 task
+  status: pending_approval or succeeded per mandate
+  founder: O

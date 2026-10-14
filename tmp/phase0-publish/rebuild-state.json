@@ -1,0 +1,11 @@
+{
+  "old_head": "59cdb2dd3d595bf3a5e1dc33b5e7740e035ce970",
+  "old_ticket": "eb193aaf91f4f98e73aafa86ab4297635eb1d971",
+  "new_ticket": "f747c21e65a504ec8303c80f6a5feb14ed49a48d",
+  "pdf_hashes": {
+    "AI-Chief-of-Staff-Workbook.pdf": "188f1ce1e7f824dab53059a6c1871f292508ae2ecf7925b18073d6383c7a1c94",
+    "AI_Chief_of_Staff_Daily_Workload_Plan_Jayraj_Corrected.pdf": "5ca443203f61c8c232909ecb9539530ca9208edac64a20ce38050123ecbfd8c8"
+  },
+  "new_head": "c5b27923d69f087655ebc4d6c54ba99971c94460",
+  "local_backup": "refs/heads/local-backup/phase0-before-pdf-exclusion"
+}

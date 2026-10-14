@@ -178,3 +178,4 @@ class TestContextCapsuleBuilder:
         capsule, _ = ContextService.build_capsule(ctx_no_tz)
         assert capsule.contact.timezone == "Asia/Kolkata"
         assert capsule.now.contact_tz == "Asia/Kolkata"
+

@@ -338,3 +338,4 @@ class ContextService:
         )
 
         return capsule, content_hash
+

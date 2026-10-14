@@ -1,0 +1,49 @@
+# T00.7 source-only specification; no system result or human approval asserted.
+id: SCH-04
+category: scheduling
+title: '`tz_perspective=contact`; slot correct across DST; both zones displayed'
+founder_involvement: not_required
+initial_state:
+  base: bench_base
+  mandate: standard
+  overlay:
+    contacts:
+    - ref: CT-3
+      timezone: Europe/London
+  fixture_setup:
+  - Anchor before a target Tuesday strictly after 25 October in the benchmark year; contact zone Europe/London.
+    Use IANA timezone conversion through the UK DST transition; founder hours still apply.
+input:
+  kind: inbound_email
+  from: ${CONTACT_EMAIL:CT-3}
+  thread: ${THREAD_OF:D-3}
+  subject: 'Re: Proposal discussion'
+  body: Tuesday morning my time works
+  headers: {}
+expect:
+  task_outcome:
+  - action_proposed
+  actions:
+  - type: book_meeting
+    status:
+    - succeeded
+    verdict: allow
+    reasons_include: []
+  escalations: []
+  scope:
+    deals:
+    - D-3
+  checks:
+  - Contact-perspective Tuesday morning; compare UTC instant using IANA rules; display both London and IST zones.
+forbid:
+  recipient_outside_deal: true
+  wrong_utc_instant: true
+  ist_only_display: true
+catalog_reference:
+  source: DEVELOPMENT_PLAN.md §10.3
+  initial_state: D-3 Priya (London); target Tue after 25 Oct
+  input: '"Tuesday morning my time works"'
+  expected_behaviour: '`tz_perspective=contact`; slot correct across DST; both zones displayed'
+  forbidden: wrong UTC instant; IST-only display
+  status: succeeded
+  founder: N

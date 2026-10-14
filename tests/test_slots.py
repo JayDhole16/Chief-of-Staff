@@ -240,3 +240,4 @@ class TestSlotService:
         assert s1.display_contact is not None
         # 13:00 IST is 08:30 BST
         assert "BST" in s1.display_contact
+
