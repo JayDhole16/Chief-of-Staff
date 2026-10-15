@@ -11,16 +11,16 @@
 | Project | AI Chief of Staff (Founder OS), AMD Developer Hackathon ACT III |
 | Owner of this file | **YOU** — Product + Integration Engineer |
 | Teammates | **Jairaj** — Core Architect + Safety Lead; **Rehan** — AI Platform + Agent Lead |
-| Local date | Thu 15 Oct 2026 (IST), Day 3; Day 3 engineering deliverables complete |
+| Local date | Fri 16 Oct 2026 (IST), Day 4; Day 4 engineering deliverables complete |
 | Deadline | Sun 18 Oct 2026, **16:00 IST internal**, **20:30 IST hard** |
 | Working branch | `t00-phase0-product-integration` |
-| HEAD/PR | Local working tree updated with Day 3 deliverables; clean scoped commit prepared |
-| Current focus | Day 3 engineering tasks: T05.4, T05.5, T09.4, T09.5, T08.1, T08.4 |
-| Current ticket | T05.4 (COMPLETE), T05.5 (COMPLETE), T09.4 (COMPLETE), T09.5 (COMPLETE), T08.1 (COMPLETE), T08.4 (CONTRACT-VALIDATED / BLOCKED ON T05.7) |
-| Last merged ticket | No teammate tasks merged to main; Jairaj T05.2/T05.6/T05.7 and Rehan T03.6/T07.* remain pending |
-| Last passing checks | Python test suite: 76/76 passed in 0.41s across all core suites (`test_context_capsule.py`, `test_slots.py`, `test_inbound_fixtures.py`, `test_read_api_contracts.py`, `test_trusted_render.py`, `test_inr_formatter.py`, `test_integration_example.py`). Frontend test suite: 35/35 passed in 5.5s across 6 files (`approval-card.test.tsx`, `activity-feed.test.tsx`, `pipeline-and-settings.test.tsx`, `api-client.test.ts`, `usePolling.test.ts`, `login-flow.test.tsx`). Frontend production build: `npm run build` succeeds cleanly (0 errors, 384 kB bundle) |
-| Pending human blockers | Jairaj: T05.2 (DB task service), T05.6 (`propose_action`), T05.7 (authority router / approval API); Rehan: GPU runtime, vLLM on MI300X, Evolus MCP tunnel |
-| Next decision | Day 4 Golden Path integration (T10.1 fake then real) and live API wiring once Jairaj merges T05.7 and Rehan connects agent path |
+| HEAD/PR | Local working tree updated with Day 4 deliverables (T08.1, T08.2, T08.4, T09, T10.1); clean scoped commit prepared |
+| Current focus | Day 4 engineering: T08.1, T08.2, T08.4, T09 real API integration, T10.1 golden path lead |
+| Current ticket | T08.1 (COMPLETE), T08.2 (COMPLETE), T08.4 (COMPLETE), T09 (COMPLETE), T10.1 (CHECKPOINT A ACHIEVED / CHECKPOINT B BLOCKED) |
+| Last merged ticket | No teammate tasks merged to main; Jairaj T05.2/T05.6/T05.7/T06.5 and Rehan T07.*/T08.3 remain absent from Git |
+| Last passing checks | Python test suite: 107/107 passed in 0.97s across 11 test suites (`test_context_capsule.py`, `test_slots.py`, `test_inbound_fixtures.py`, `test_read_api_contracts.py`, `test_trusted_render.py`, `test_inr_formatter.py`, `test_integration_example.py`, `test_inbound_pipeline.py`, `test_sweep.py`, `test_read_api_endpoints.py`, `test_golden_path.py`). Golden-path check: `python scripts/demo_check.py` passes 10/10 steps in 0.06s (Checkpoint A ACHIEVED). Frontend test suite: 35/35 passed in 6.3s across 6 test files. Frontend build: `npm run build` succeeds cleanly in 1.54s (0 TypeScript errors, 384 kB bundle) |
+| Pending human blockers | Jairaj: T05.2 (DB task service), T05.6 (`propose_action`), T05.7 (production authority router / Postgres integration), T06.5/T06.6 (live worker vault); Rehan: GPU runtime, vLLM on MI300X, Evolus MCP tunnel, Google OAuth credentials |
+| Next decision | Day 5 Benchmark harness (T12.1) and founder brief (T13.2); assist teammates with upstream integration when their Day 3/Day 4 PRs land |
 
 ### Update rules for this quick resume
 
@@ -132,14 +132,14 @@ Team review: each ticket has **one named owner**, tests, a PR and evidence. Jair
 | `T09.1` | Phone-first PWA shell, login, typed client, CSRF, polling, MSW | Approved scaffold; actual OpenAPI for **live** typing only | EXISTING React/Vite code; source deviation/testing/live acceptance unverified; untouched |
 | `T05.4` | Task-scoped context capsules, fact hash and isolation | `T05.2 + T04.4` | **COMPLETE** — `backend/contracts/capsule.py`, `backend/services/context.py`; freshness, isolation, hash stability; 6 unit tests passing (`tests/test_context_capsule.py`) |
 | `T05.5` | Server-defined availability/slot tokens and busy-cache reads | `T05.2 + T03.1` | **COMPLETE** — `backend/security/tokens.py`, `backend/services/slots.py`; HMAC-SHA256 signed tokens, working hours, 15m buffers, IST/BST; 8 unit tests passing (`tests/test_slots.py`) |
-| `T09.2` | Text/hold-to-talk command, conversation, trace, resolution | `T09.1` + `T08.3` or MSW mocks | UNKNOWN — Day 2 |
-| `T09.3` | Mandate confirm/form, active strip, kill switch | `T09.1`; `T05.7` for real API | UNKNOWN — Day 2 |
+| `T09.2` | Text/hold-to-talk command, conversation, trace, resolution | `T09.1` + `T08.3` or MSW mocks | UNKNOWN — Rehan T08.3 command dispatch absent |
+| `T09.3` | Mandate confirm/form, active strip, kill switch | `T09.1`; `T05.7` for real API | **COMPLETE** — 2-tap emergency kill switch in `SettingsView.tsx`, status badge in `DashboardPage.tsx`, `/api/settings/kill-switch` live endpoint |
 | `T09.4` | Approval card, source highlights, hash-bound approve/reject | `T09.1`, `T05.7`; push is P1 | **COMPLETE** — `ApprovalCard.tsx`, `HighlightedText.tsx`; hash-bound approve/reject, 409 conflict reload, source facts drawer, mobile targets; 6 unit tests passing (`tests/approval-card.test.tsx`) |
 | `T09.5` | Feed, undo, receipt, pipeline, escalation, settings | `T09.1`, `T08.4` or mocks | **COMPLETE** — `ActivityFeed.tsx`, `UndoCountdown.tsx`, `ReceiptView.tsx`, `PipelineView.tsx`, `SettingsView.tsx`, `DashboardPage.tsx`; 10 unit tests passing |
-| `T08.1` | Inbound Gmail ingest/flag/resolve/task workflow | `T06.2`, `T06.5`, `T04.6`, `T05.3`, `T05.2`, `T07.4` | **COMPLETE** — `tests/fixtures/inbound_fixtures.yaml`; 6 canonical cases (INB-001–INB-006) including Raju objection, OOO, ambiguous contact; 7 unit tests passing (`tests/test_inbound_fixtures.py`) |
-| `T08.2` | Quiet-proposal sweep | `T08.1`, `T04.2`, `T05.2` | UNKNOWN — Day 4 |
-| `T08.4` | Read APIs: activity, receipts, deals, escalation | `T05.6`, `T05.7` | **CONTRACT-VALIDATED / BLOCKED ON T05.7** — `backend/contracts/read_api.py`, `tests/test_read_api_contracts.py`; 5 contract tests passing. Live route implementation deferred until Jairaj merges T05.7 authority router |
-| `T10.1` | Fake then real golden-path test/runbook | All core capabilities, executor, agent path, read APIs, PWA | UNKNOWN — Day 4 |
+| `T08.1` | Inbound Gmail ingest/flag/resolve/task workflow | `T06.2`, `T06.5`, `T04.6`, `T05.3`, `T05.2`, `T07.4` | **COMPLETE** — `backend/services/inbound.py`, `tests/test_inbound_pipeline.py`; 10 canonical scenarios passing (INB-001–006, verbal claims, OOO snooze, spoofing, duplicate drop, upstream error) |
+| `T08.2` | Quiet-proposal sweep | `T08.1`, `T04.2`, `T05.2` | **COMPLETE** — `backend/services/sweep.py`, `tests/test_sweep.py`; deterministic quiet selection (D-1/D-4), opt-out/OOO respect, deduplication, 6 unit/contract tests passing |
+| `T08.4` | Read APIs: activity, receipts, deals, escalation | `T05.6`, `T05.7` | **COMPLETE** — `backend/api/app.py`, `backend/main.py`, `backend/contracts/read_api.py`, `tests/test_read_api_endpoints.py`; typed FastAPI routes for `/api/activity`, `/api/receipts/{ref}`, `/api/deals`, `/api/escalations`; 8 endpoint tests passing |
+| `T10.1` | Fake then real golden-path test/runbook | All core capabilities, executor, agent path, read APIs, PWA | **COMPLETE (FAKE) / BLOCKED (LIVE)** — `tests/test_golden_path.py` (7 tests pass), `scripts/demo_check.py` (10/10 steps pass in 0.06s, Checkpoint A ACHIEVED); `scripts/live_golden_path_check.py` truthful probe confirms Checkpoint B BLOCKED by missing MI300X vLLM, Evolus tunnel, and Google OAuth credentials from teammates |
 | `T12.1` | Benchmark harness + scoring | `T00.7`, golden path, runner | UNKNOWN — Day 5 |
 | `T13.2` | Founder brief from receipts, deterministic fallback | Golden path / receipts | UNKNOWN — Day 5 |
 | `T15.1` | Rehearsals, acceptance and recorded backup clips | Integrated demo; hard freeze | UNKNOWN — Day 5–6 |
@@ -289,19 +289,20 @@ T00.8 prepared docs/adr/ADR-0001.md through ADR-0012.md from DEVELOPMENT_PLAN §
 | 2026-10-14 02:21 IST | Day 2 reassessment / same Phase 0 scope | Same branch/HEAD; no PR | Four Phase 0 validators pass; temporary-config Python diagnostic: 81 pass / 3 fail in existing fixture assertions; remote main unchanged | Owners review pending | DIAGNOSTIC ONLY / FULL CHECKS BLOCKED |
 | 2026-10-14 IST | Phase 0 publication | Ticket commits 1afde8a / 90eaebb / ab54c23 / eb193aa | Four content validators pass; Git-stored document/source hashes checked; no full check or approval claim | Team review pending | COMMITTED LOCALLY / PUSH AUTO-REVIEW REJECTED |
 | 2026-10-15 IST | Day 3 Engineering (T05.4, T05.5, T09.4, T09.5, T08.1, T08.4) | `t00-phase0-product-integration` | Python test suite: 76/76 passed in 0.41s across all core suites (`test_context_capsule.py`, `test_slots.py`, `test_inbound_fixtures.py`, `test_read_api_contracts.py`, `test_trusted_render.py`, `test_inr_formatter.py`, `test_integration_example.py`). Frontend test suite: 35/35 passed in 5.5s across 6 test files (`approval-card.test.tsx`, `activity-feed.test.tsx`, `pipeline-and-settings.test.tsx`, `api-client.test.ts`, `usePolling.test.ts`, `login-flow.test.tsx`). Frontend production build: `npm run build` succeeds cleanly (0 errors, 384 kB bundle) | Jairaj + Rehan review pending | COMPLETE / VERIFIED / BLOCKED ON T05.7 FOR LIVE READ ROUTES |
+| 2026-10-16 IST | Day 4 Engineering (T08.1, T08.2, T08.4, T09, T10.1) | `t00-phase0-product-integration` | Python test suite: 107/107 passed in 0.97s across 11 test suites (`test_context_capsule.py`, `test_slots.py`, `test_inbound_fixtures.py`, `test_read_api_contracts.py`, `test_trusted_render.py`, `test_inr_formatter.py`, `test_integration_example.py`, `test_inbound_pipeline.py`, `test_sweep.py`, `test_read_api_endpoints.py`, `test_golden_path.py`). Standalone golden path check: `python scripts/demo_check.py` passed 10/10 steps in 0.06s (Checkpoint A ACHIEVED). Live probe: `python scripts/live_golden_path_check.py` truthfully records Checkpoint B BLOCKED by missing external GPU/model, Evolus tunnel, and Google credentials. Frontend tests: 35/35 passed; build succeeds cleanly (0 errors, 384 kB bundle, proxy configured). | Team review pending | COMPLETE (FAKE PATH & CORE ENGINE) / BLOCKED (LIVE UPSTREAM PREREQUISITES) |
 
 ### Metrics / demo proofs
 
 | Proof | Evidence path/link | Actual observed result |
 |---|---|---|
 | Fresh clone and `make check` | — | UNKNOWN (make toolchain blocked by invalid root TOML) |
-| PWA mocked login/screens | `frontend/src/` | 35/35 Vitest tests pass; build succeeds cleanly; all 5 tabs operational with MSW mocks |
+| PWA mocked login/screens | `frontend/src/` | 35/35 Vitest tests pass; build succeeds cleanly; all 5 tabs operational with backend API proxy |
 | Capsule & Slot Services (T05.4/T05.5) | `backend/services/{context,slots}.py` | 14/14 unit tests pass (`test_context_capsule.py`, `test_slots.py`); golden slot 15:00–15:30 IST verified |
 | Inbound Fixtures & Read API Contracts | `tests/fixtures/inbound_fixtures.yaml` | 12/12 contract/fixture tests pass (`test_inbound_fixtures.py`, `test_read_api_contracts.py`) |
-| G1 model/MCP/Google smoke | — | UNKNOWN |
+| G1 model/MCP/Google smoke | — | UNKNOWN — Rehan to provide |
 | G3 capability / proposed action / capsule | `backend/services/context.py` + `ApprovalCard.tsx` | Capsule builder verified; hash-bound approval card verified; end-to-end MCP tunnel blocked on Rehan/Jairaj |
-| G4 fake golden path (`make demo-check`) | — | UNKNOWN — Day 4 target |
-| G4 live recorded run | — | UNKNOWN — Day 4 target |
+| G4 fake golden path (`make demo-check` / `scripts/demo_check.py`) | `scripts/demo_check.py` | **PASS — 10/10 steps verified in 0.06s** (Checkpoint A ACHIEVED) |
+| G4 live recorded run (`scripts/live_golden_path_check.py`) | `scripts/live_golden_path_check.py` | **BLOCKED** by missing MI300X vLLM endpoint, Evolus tunnel, and Google OAuth credentials from teammates |
 | G5 rehearsals | — | UNKNOWN |
 
 ## 13. Append-only session log (one verified entry per coding session)
@@ -413,4 +414,52 @@ Read context.md first and treat it as my session memory, not as authority over t
   - T08.4: CONTRACT-VALIDATED / BLOCKED ON T05.7 FOR LIVE ENDPOINTS
   - Gate G3: Capsule builder and hash-bound approval card ready. End-to-end MCP / direct-tool integration gate remains open pending Jairaj's T05.6/T05.7 and Rehan's agent/runtime connection.
 - Next Action: Day 4 Golden Path integration (T10.1 fake then live) upon availability of Jairaj's T05.6/T05.7 and Rehan's agent execution path.
+
+### 2026-10-16 IST — Day 4 Engineering Deliverables & Golden-Path Integration (YOU)
+
+- Date/time IST: 2026-10-16 IST (Day 4)
+  Ticket + goal: T08.1 (Inbound Gmail ingestion, classification, resolution, risk flagging, task creation), T08.2 (Deterministic quiet sweep), T08.4 (FastAPI read APIs for activity, receipts, deals, escalations), T09 (Founder PWA real API integration), T10.1 (Golden path lead: fake adapters Checkpoint A & live probe Checkpoint B).
+  Branch/commit/PR: `t00-phase0-product-integration`
+  Dependency check:
+    - Jairaj: Day 3/Day 4 deliverables (T05.2 DB task service, T05.6 propose_action, T05.7 authority router, T06.5/T06.6 live worker executor) have NOT been committed to Git.
+    - Rehan: Day 4 deliverables (T07.1 Evolus prompt, T07.3/T07.5 MCP tunnel/runner, T08.3 command dispatch) and external GPU vLLM/credentials have NOT been committed to Git.
+    - Architectural Boundary Adherence: Did not invent parallel substitute architectures for missing teammate components. Built narrow in-memory repositories, deterministic fake adapters, and contract test harnesses in my owned modules.
+  Files changed:
+    - `backend/services/inbound.py`: Full inbound Gmail processing pipeline implementing validation, deduplication (G01), entity resolution (G04/G05), classification (OOO snooze, opt-out G12, price objection G08/G10, legal objection G14/G02), and scoped task / escalation creation.
+    - `backend/services/sweep.py`: Deterministic quiet proposal sweep engine evaluating deals (threshold 3 days), respecting DNC and OOO snooze dates, drafting grounded proposed actions under Mandate C2 (<= 5% discount) with SHA-256 rendered_hash binding, and skipping duplicate open proposals.
+    - `backend/services/executor.py`: Worker executor and fake Gmail/Calendar adapters enforcing the non-negotiable invariant that only workers execute external writes, checking kill switch state, and generating immutable ActionReceiptResponses.
+    - `backend/api/app.py` & `backend/main.py`: FastAPI backend application exposing typed read APIs (/api/activity, /api/receipts/{ref}, /api/deals, /api/pipeline/deals, /api/escalations), authority endpoints (/api/approvals/pending, /api/approvals/{ref}/decision with 409 Conflict on hash mismatch), session auth, kill switch toggle, and dev injection endpoints.
+    - `frontend/vite.config.ts`: Added proxy for `/api` to `http://127.0.0.1:8000` enabling live PWA interaction against real backend.
+    - `tests/test_inbound_pipeline.py`: 10 comprehensive integration tests covering all 10 canonical inbound scenarios.
+    - `tests/test_sweep.py`: 6 tests covering quiet deal selection, OOO snooze, opt-out, stale deals, deduplication, and partial failure safety.
+    - `tests/test_read_api_endpoints.py`: 8 endpoint integration tests using Starlette TestClient.
+    - `tests/test_golden_path.py`: 7 end-to-end golden path and negative security tests.
+    - `scripts/demo_check.py`: Standalone fake-adapter golden-path verification runner (equivalent to `make demo-check`).
+    - `scripts/live_golden_path_check.py`: Diagnostic prerequisite probe for Checkpoint B.
+    - `context.md`: Updated living engineering context with Day 4 verified evidence.
+  Code behavior delivered:
+    - Inbound Gmail pipeline handles customer replies, detects unverified commercial promises (Raju Beat 3), flags out-of-scope legal penalties (Arjun), prevents domain spoofing (personal gmail), auto-snoozes on OOO (Priya), and drops duplicate message replays idempotently.
+    - Deterministic quiet sweep scans deal pipeline, creates grounded proposals for eligible quiet deals (D-1 scheduled with 15s undo window, D-4 flagged for founder approval), and respects opt-outs and active proposals.
+    - FastAPI read APIs return strictly typed Pydantic payloads for activity events, terminal action receipts, pipeline deals, and escalations.
+    - Approval endpoint enforces cryptographic `rendered_hash` binding, rejecting altered or stale requests with HTTP 409 Conflict.
+    - Worker executor is the sole component permitted to write to external fake adapters and records terminal audit receipts.
+  Tests run / actual results:
+    - Python test suite: 107/107 passed in 0.97s across 11 test suites (`test_context_capsule.py`: 6 pass, `test_slots.py`: 8 pass, `test_inbound_fixtures.py`: 7 pass, `test_read_api_contracts.py`: 5 pass, `test_trusted_render.py`: 29 pass, `test_inr_formatter.py`: 20 pass, `test_integration_example.py`: 1 pass, `test_inbound_pipeline.py`: 10 pass, `test_sweep.py`: 6 pass, `test_read_api_endpoints.py`: 8 pass, `test_golden_path.py`: 7 pass).
+    - Standalone golden path check (`python scripts/demo_check.py`): 10/10 steps verified in 0.06s (VERDICT: PASS).
+    - Checkpoint A (Fake-Adapter Golden Path by 14:00 IST): ACHIEVED.
+    - Checkpoint B (Live Golden Path by 19:00 IST): BLOCKED — `python scripts/live_golden_path_check.py` diagnostic confirms absence of DATABASE_URL, GOOGLE_CLIENT_ID, VLLM_BASE_URL (MI300X), and EVOLUS_API_KEY. No live execution claimed.
+    - Frontend test suite: 35/35 passed in 6.3s across 6 test files in Vitest.
+    - Frontend production build: `npm run build` succeeds cleanly in 1.54s (0 errors, 384 kB bundle).
+  Manual acceptance / screenshot: PWA connected to backend via `/api` proxy. Dashboard, approvals, activity feed, pipeline, and settings tabs verified.
+  Handoff + reviewer: Jairaj (Safety & Authority Lead) for guard/receipt/authority review; Rehan (AI Platform Lead) for agent/MCP hookup.
+  Decisions / ADR required: Kept FastAPI in-memory state store as clean test fixture pending Jairaj's Postgres migrations; preserved strict rendered_hash binding.
+  Blockers or failures (owner):
+    - B-008: Live model serving (vLLM on MI300X alias `cos-main`) not reachable from workstation (Rehan).
+    - B-009: Evolus MCP tunnel and workspace configuration not deployed (Rehan).
+    - B-010: Live Google OAuth credentials and consent screen pending (Jairaj + Rehan).
+    - B-011: Database migrations and task service table schemas not merged to Git (Jairaj).
+  Status: COMPLETE (Fake Path & Core Engine) / BLOCKED (Live Upstream Prerequisites).
+  Next exact task: Day 5 Benchmark harness (T12.1) and founder brief generator (T13.2); assist teammates with upstream integration when their Day 3/Day 4 PRs land.
+  Canonical PROJECT_CONTEXT §§14–20 update proposal: Record T08.1, T08.2, T08.4, T09, and T10.1 (fake) complete; report Checkpoint A green and Checkpoint B blocked on external infra.
+
 
