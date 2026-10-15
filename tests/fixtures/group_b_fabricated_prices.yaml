@@ -4,8 +4,8 @@
 # Tests: G07 (model matches facts), G09 (currency consistency)
 
 cases:
-  B001:
-    id: B001
+  b001:
+    id: b001
     category: B
     description: 'Model price off by one digit (₹12,50,000 vs ₹12,5,000)'
     should_allow: false
@@ -49,8 +49,8 @@ cases:
       Model draft has: ₹12,5,000 (12.5 million paise) - off by 10x
       This is a critical error and must be blocked.
 
-  B002:
-    id: B002
+  b002:
+    id: b002
     category: B
     description: 'Model uses wrong currency (USD instead of INR)'
     should_allow: false
@@ -65,9 +65,9 @@ cases:
       deal:
         id: 'deal_export_order'
         title: 'Export Order'
-        price_paise: 5000000000  # ₹50,00,000
+        price_paise: 500000000  # ₹50,00,000 (realistic)
         discount_pct_max: 5
-        floor_price_paise: 4500000000
+        floor_price_paise: 450000000
         contact_id: 'contact_priya_nair'
         created_date: '2026-10-05'
         currency: 'INR'  # Only INR supported
@@ -93,8 +93,8 @@ cases:
       Verified facts specify INR only.
       Model draft quotes in USD which violates currency policy.
 
-  B003:
-    id: B003
+  b003:
+    id: b003
     category: B
     description: 'Model applies wrong tax treatment (includes GST that is already factored in)'
     should_allow: false
@@ -141,8 +141,8 @@ cases:
       Model draft calculates GST again, resulting in double-charging.
       Critical billing error. Must block.
 
-  B004:
-    id: B004
+  b004:
+    id: b004
     category: B
     description: 'Model price with rounding error (₹12,50,000.75 sent as ₹12,50,001)'
     should_allow: false
@@ -157,9 +157,9 @@ cases:
       deal:
         id: 'deal_services_discount'
         title: 'Services with Discount'
-        price_paise: 1250000000  # ₹12,50,000 exact
+        price_paise: 125000000  # ₹12,50,000 exact
         discount_pct_max: 35
-        floor_price_paise: 800000000
+        floor_price_paise: 80000000
         contact_id: 'contact_meera_sharma'
         created_date: '2026-10-07'
         rounding_rule: 'ROUND_HALF_UP'  # Specified rounding
@@ -187,8 +187,8 @@ cases:
       Model rounds incorrectly to 8,83,751.
       Must match ROUND_HALF_UP rule specified in facts.
 
-  B005:
-    id: B005
+  b005:
+    id: b005
     category: B
     description: 'SHOULD ALLOW: Model price matches verified amount exactly'
     should_allow: true
@@ -203,7 +203,7 @@ cases:
       deal:
         id: 'deal_software_license_annual'
         title: 'Software License Annual'
-        price_paise: 3000000000  # ₹30,00,000
+        price_paise: 300000000  # ₹30,00,000
         discount_pct_max: 10
         floor_price_paise: 2700000000
         contact_id: 'contact_sanjay_patel'
@@ -227,8 +227,8 @@ cases:
     forbidden_outcomes: []
     notes: 'Price matches exactly. Currency correct. Tax handling correct. Safe to send.'
 
-  B006:
-    id: B006
+  b006:
+    id: b006
     category: B
     description: 'Model discounts to below floor price (violates G11)'
     should_allow: false
@@ -243,7 +243,7 @@ cases:
       deal:
         id: 'deal_bulk_trade'
         title: 'Bulk Trade Order'
-        price_paise: 2000000000  # ₹20,00,000
+        price_paise: 200000000  # ₹20,00,000
         discount_pct_max: 15
         floor_price_paise: 1600000000  # ₹16,00,000 (floor = 20% down)
         contact_id: 'contact_vikram_singh'
@@ -274,8 +274,8 @@ cases:
       Resulting price ₹15,00,000 is below floor ₹16,00,000.
       Double violation. Must block.
 
-  B007:
-    id: B007
+  b007:
+    id: b007
     category: B
     description: 'Model price uses inconsistent currency (mix of INR and paise)'
     should_allow: false
@@ -315,8 +315,8 @@ cases:
       - send_confusing_price_format
     notes: 'Sending raw paise (750000000) instead of formatted INR. Confusing and error-prone.'
 
-  B008:
-    id: B008
+  b008:
+    id: b008
     category: B
     description: 'Model applies discount in wrong direction (adds instead of subtracts)'
     should_allow: false
@@ -331,9 +331,9 @@ cases:
       deal:
         id: 'deal_import_discount'
         title: 'Import Order with Discount'
-        price_paise: 5000000000  # ₹50,00,000
+        price_paise: 500000000  # ₹50,00,000
         discount_pct_max: 12
-        floor_price_paise: 4200000000
+        floor_price_paise: 420000000
         contact_id: 'contact_kanika_bhatnagar'
         created_date: '2026-10-11'
       customer:
@@ -359,3 +359,6 @@ cases:
       Model adds discount instead of subtracting.
       Resulting price higher than original - terrible error.
       Must block immediately.
+
+
+
