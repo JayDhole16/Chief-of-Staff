@@ -10,48 +10,51 @@ Connects:
 - Inbound pipeline injection & quiet sweep dev endpoints (/api/dev/...)
 """
 
-from datetime import datetime, timezone, timedelta
 import hashlib
+import hmac
+import os
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, Header, HTTPException, Query, Response, status
+from fastapi import FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from backend.contracts.read_api import (
-    ActivityFeedResponse,
-    ActivityEventItem,
-    ActivityType,
     ActionReceiptResponse,
-    ReceiptStatus,
-    ReceiptFactItem,
-    ReceiptTimelineItem,
-    PipelineDealsResponse,
+    ActivityEventItem,
+    ActivityFeedResponse,
+    ActivityType,
     DealItem,
     DealStage,
-    EscalationsResponse,
     EscalationItem,
     EscalationSeverity,
+    EscalationsResponse,
+    PipelineDealsResponse,
+    ReceiptFactItem,
+    ReceiptStatus,
+    ReceiptTimelineItem,
+)
+from backend.services.executor import (
+    FakeCalendarAdapter,
+    FakeGmailAdapter,
+    WorkerExecutor,
 )
 from backend.services.inbound import (
     InboundEmailMessage,
     InboundProcessingPipeline,
-    DEFAULT_CONTACTS,
-    DEFAULT_DEALS,
 )
 from backend.services.sweep import (
-    QuietDealRecord,
     QuietSweepService,
-    SweepProposal,
     get_demo_sweep_deals,
 )
-from backend.services.executor import (
-    FakeGmailAdapter,
-    FakeCalendarAdapter,
-    WorkerExecutor,
+from backend.services.tasks import (
+    PostgresTaskRepository,
+    SQLiteTaskRepository,
+    TaskRepositoryUnavailableError,
+    TaskService,
 )
-
 
 # ---------------------------------------------------------------------------
 # Request/Response Schemas for Authority & Ops
@@ -170,6 +173,40 @@ class InjectInboundRequest(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
 
 
+class OperationsComponent(BaseModel):
+    status: Literal["ready", "degraded", "unavailable", "not_configured"]
+    detail: str
+
+
+class OperationsStatusResponse(BaseModel):
+    status: Literal["ready", "degraded"]
+    checked_at: datetime
+    data_mode: Literal["provisional"]
+    kill_switch_active: bool
+    components: dict[str, OperationsComponent]
+
+
+class BriefLink(BaseModel):
+    kind: Literal["receipt", "approval", "escalation"]
+    reference: str
+    href: str
+
+
+class BriefItem(BaseModel):
+    event_id: str
+    timestamp: datetime
+    title: str
+    summary: str
+    link: BriefLink
+
+
+class BriefResponse(BaseModel):
+    generated_at: datetime
+    items: list[BriefItem]
+    omitted_unlinked_events: int
+    limitation: str
+
+
 # ---------------------------------------------------------------------------
 # State Container (In-Memory Database & Services)
 # ---------------------------------------------------------------------------
@@ -181,6 +218,8 @@ class ApplicationState:
         self.reset()
 
     def reset(self):
+        if hasattr(self, "task_repository"):
+            self.task_repository.close()
         self.sessions: dict[str, dict[str, Any]] = {
             "test_session_123": {
                 "user_id": "user_meera_01",
@@ -209,7 +248,16 @@ class ApplicationState:
             activity_store=[],
         )
 
-        self.inbound_pipeline = InboundProcessingPipeline()
+        database_url = os.getenv("DATABASE_URL")
+        self.task_repository = (
+            PostgresTaskRepository(database_url)
+            if database_url
+            else SQLiteTaskRepository()
+        )
+        self.task_service = TaskService(self.task_repository)
+        self.inbound_pipeline = InboundProcessingPipeline(
+            task_service_hook=self._create_inbound_task
+        )
         self.sweep_service = QuietSweepService()
 
         # Seed initial Beat 3 proposal (Raju Patel golden path pending approval)
@@ -319,6 +367,33 @@ class ApplicationState:
         self.receipts["rcpt_20261015_001"] = rcpt
         self.receipts["act_d1_01"] = rcpt
 
+    def _create_inbound_task(
+        self,
+        *,
+        contact_id: str | None,
+        deal_id: str | None,
+        deal_version: int,
+        message_id: str,
+        classification: Any,
+        risk_flags: list[Any],
+        verdict: str,
+    ) -> str:
+        if contact_id is None or deal_id is None:
+            raise ValueError("A verified contact and deal are required to create a task")
+        task = self.task_service.create_task(
+            workspace_id="demo",
+            contact_id=contact_id,
+            deal_id=deal_id,
+            deal_version=deal_version,
+            source_message_id=message_id,
+            kind=classification.intent.lower(),
+            payload={
+                "verdict": verdict,
+                "risk_flags": [flag.code for flag in risk_flags],
+            },
+        )
+        return task.task_id
+
 
 # Global in-memory instance
 state = ApplicationState()
@@ -343,6 +418,27 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.get("/healthz")
+    @app.get("/api/healthz")
+    def healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.get("/readyz")
+    def readyz() -> dict[str, str]:
+        try:
+            healthy = state.task_repository.health_check()
+        except TaskRepositoryUnavailableError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Task repository is not ready",
+            ) from exc
+        if not healthy:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Task repository is not ready",
+            )
+        return {"status": "ready"}
 
     # -----------------------------------------------------------------------
     # Helper: Verify Session
@@ -405,11 +501,32 @@ def create_app() -> FastAPI:
         if not proposal:
             raise HTTPException(status_code=404, detail=f"Proposal {ref} not found")
 
-        # Non-negotiable safety invariant: rendered_hash binding
-        if proposal.rendered_hash != req.rendered_hash:
+        if proposal.status != "pending":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Proposal version conflict: client hash {req.rendered_hash} does not match current hash {proposal.rendered_hash}",
+                detail=f"Proposal {ref} is no longer pending approval.",
+            )
+
+        actual_hash = hashlib.sha256(proposal.rendered_body.encode("utf-8")).hexdigest()
+        if not hmac.compare_digest(proposal.rendered_hash, actual_hash):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Stored proposal content no longer matches its rendered_hash.",
+            )
+
+        # Non-negotiable safety invariant: rendered_hash binding
+        if not hmac.compare_digest(proposal.rendered_hash, req.rendered_hash):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Proposal version conflict: the supplied hash does not match the current proposal.",
+            )
+
+        if datetime.fromisoformat(proposal.expires_at) <= datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Proposal {ref} has expired and cannot be approved."
+                ),
             )
 
         if req.decision == "approve":
@@ -428,6 +545,11 @@ def create_app() -> FastAPI:
                 facts_used=[f.model_dump() for f in proposal.facts_used],
                 is_founder_approved=True,
             )
+            if receipt.status == ReceiptStatus.BLOCKED:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Approval was recorded but execution failed. Receipt: {receipt.receipt_id}",
+                )
 
             # Record activity event
             state.activity_events.insert(0, ActivityEventItem(
@@ -530,6 +652,7 @@ def create_app() -> FastAPI:
                     user_id=act.get("user_id", "system"),
                     action_ref=act.get("action_ref"),
                     receipt_id=act.get("receipt_id"),
+                    escalation_id=act.get("escalation_id"),
                 ))
 
         for act in state.sweep_service.activity_store:
@@ -669,6 +792,114 @@ def create_app() -> FastAPI:
                 ))
 
         return EscalationsResponse(escalations=state.escalations, count=len(state.escalations))
+
+    @app.get("/api/v1/ops/status", response_model=OperationsStatusResponse)
+    def get_operations_status():
+        try:
+            repository_ready = state.task_repository.health_check()
+        except TaskRepositoryUnavailableError as exc:
+            repository_ready = False
+            repository_detail = str(exc)
+        else:
+            repository_detail = (
+                f"{type(state.task_repository).__name__} health check passed"
+                if repository_ready
+                else f"{type(state.task_repository).__name__} health check failed"
+            )
+
+        components = {
+            "api": OperationsComponent(status="ready", detail="API process is serving requests"),
+            "task_repository": OperationsComponent(
+                status="ready" if repository_ready else "unavailable",
+                detail=repository_detail,
+            ),
+            "worker": OperationsComponent(
+                status="degraded",
+                detail="Health-only placeholder; no background jobs are executed",
+            ),
+            "google": OperationsComponent(
+                status="not_configured",
+                detail="Fake Gmail and Calendar adapters are active; no live Google connection",
+            ),
+            "agent_runtime": OperationsComponent(
+                status="not_configured",
+                detail="No live agent or DirectRunner is configured",
+            ),
+            "benchmarks": OperationsComponent(
+                status="not_configured",
+                detail="No benchmark run is recorded",
+            ),
+            "deployment": OperationsComponent(
+                status="not_configured",
+                detail="No approved demo deployment target is configured",
+            ),
+        }
+        overall_status = (
+            "ready"
+            if repository_ready
+            and all(component.status == "ready" for component in components.values())
+            else "degraded"
+        )
+        return OperationsStatusResponse(
+            status=overall_status,
+            checked_at=datetime.now(timezone.utc),
+            data_mode="provisional",
+            kill_switch_active=state.kill_switch_active,
+            components=components,
+        )
+
+    @app.get("/api/v1/brief", response_model=BriefResponse)
+    def get_brief():
+        events = get_activity_feed().events
+        escalations = get_escalations().escalations
+        escalation_ids = {item.escalation_id for item in escalations}
+        brief_items: list[BriefItem] = []
+        omitted_unlinked = 0
+
+        for event in events:
+            link: BriefLink | None = None
+            if event.receipt_id and event.receipt_id in state.receipts:
+                link = BriefLink(
+                    kind="receipt",
+                    reference=event.receipt_id,
+                    href=f"/api/receipts/{event.receipt_id}",
+                )
+            elif event.action_ref and event.action_ref in state.proposals:
+                link = BriefLink(
+                    kind="approval",
+                    reference=event.action_ref,
+                    href="/api/approvals/pending",
+                )
+            elif event.escalation_id and event.escalation_id in escalation_ids:
+                link = BriefLink(
+                    kind="escalation",
+                    reference=event.escalation_id,
+                    href="/api/escalations",
+                )
+
+            if link is None:
+                omitted_unlinked += 1
+                continue
+
+            brief_items.append(
+                BriefItem(
+                    event_id=event.id,
+                    timestamp=event.timestamp,
+                    title=event.title,
+                    summary=event.description,
+                    link=link,
+                )
+            )
+
+        return BriefResponse(
+            generated_at=datetime.now(timezone.utc),
+            items=brief_items,
+            omitted_unlinked_events=omitted_unlinked,
+            limitation=(
+                "Provisional local state; activity may be incomplete and is not a live "
+                "operational record."
+            ),
+        )
 
     # -----------------------------------------------------------------------
     # Settings & Kill Switch (T09.5)

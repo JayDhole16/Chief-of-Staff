@@ -17,6 +17,7 @@ contract tests.
 from datetime import datetime
 from enum import Enum
 from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -41,6 +42,7 @@ class ActivityEventItem(BaseModel):
     user_id: str
     action_ref: str | None = None
     receipt_id: str | None = None
+    escalation_id: str | None = None
     rendered_hash: str | None = None
     execute_after: datetime | None = None
     can_undo: bool = False
@@ -153,4 +155,3 @@ class EscalationsResponse(BaseModel):
 
     escalations: list[EscalationItem]
     count: int
-

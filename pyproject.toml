@@ -13,6 +13,7 @@ authors = [
 ]
 dependencies = [
     "fastapi>=0.104.1",
+    "uvicorn[standard]>=0.24.0",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
     "sqlalchemy>=2.0.23",
@@ -33,6 +34,9 @@ dev = [
     "ruff>=0.1.11",
     "mypy>=1.7.1",
     "types-requests",
+    "import-linter>=2.3.0",
+    "pre-commit>=3.6.0",
+    "pip-audit>=2.7.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -58,3 +62,97 @@ python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
+
+[tool.importlinter]
+root_package = "backend"
+include_external_packages = false
+
+[[tool.importlinter.contracts]]
+name = "Domain stays isolated"
+type = "forbidden"
+source_modules = ["backend.domain"]
+forbidden_modules = [
+    "backend.api",
+    "backend.contracts",
+    "backend.db",
+    "backend.facts",
+    "backend.guards",
+    "backend.policy",
+    "backend.security",
+    "backend.services",
+    "backend.worker",
+]
+
+[[tool.importlinter.contracts]]
+name = "Facts do not depend on application layers"
+type = "forbidden"
+source_modules = ["backend.facts"]
+forbidden_modules = [
+    "backend.api",
+    "backend.contracts",
+    "backend.db",
+    "backend.guards",
+    "backend.policy",
+    "backend.security",
+    "backend.services",
+    "backend.worker",
+]
+
+[[tool.importlinter.contracts]]
+name = "Guards do not depend on application layers"
+type = "forbidden"
+source_modules = ["backend.guards"]
+forbidden_modules = [
+    "backend.api",
+    "backend.contracts",
+    "backend.db",
+    "backend.policy",
+    "backend.security",
+    "backend.services",
+    "backend.worker",
+]
+
+[[tool.importlinter.contracts]]
+name = "Policy remains isolated from I/O"
+type = "forbidden"
+source_modules = ["backend.policy"]
+forbidden_modules = [
+    "backend.api",
+    "backend.contracts",
+    "backend.db",
+    "backend.security",
+    "backend.services",
+    "backend.worker",
+]
+
+[[tool.importlinter.contracts]]
+name = "Services do not depend on API"
+type = "forbidden"
+source_modules = ["backend.services"]
+forbidden_modules = ["backend.api", "backend.worker"]
+
+[[tool.importlinter.contracts]]
+name = "Contracts do not depend on application layers"
+type = "forbidden"
+source_modules = ["backend.contracts"]
+forbidden_modules = [
+    "backend.api",
+    "backend.db",
+    "backend.policy",
+    "backend.security",
+    "backend.services",
+    "backend.worker",
+]
+
+[[tool.importlinter.contracts]]
+name = "Security utilities do not depend on application layers"
+type = "forbidden"
+source_modules = ["backend.security"]
+forbidden_modules = [
+    "backend.api",
+    "backend.contracts",
+    "backend.db",
+    "backend.policy",
+    "backend.services",
+    "backend.worker",
+]

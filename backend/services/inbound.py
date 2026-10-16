@@ -9,14 +9,13 @@ Pure, deterministic, and auditable. Conforms to BACKEND_SCHEMA §7.1-§7.5,
 TRD §9.1-§9.4, and the 10 canonical test scenarios.
 """
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-import re
 from typing import Any, Literal
 from uuid import uuid4
 
 from backend.guards.definitions import validate_guard_id
-
 
 # ---------------------------------------------------------------------------
 # Data Models
@@ -678,6 +677,7 @@ class InboundProcessingPipeline:
                 "title": f"Inbound message escalated to founder: {msg.subject}",
                 "description": reason,
                 "user_id": "inbound_processor",
+                "escalation_id": esc_id,
             })
             return InboundProcessResult(
                 status=status,

@@ -5,7 +5,7 @@
 import { setupServer } from 'msw/node'
 import { beforeAll, afterEach, afterAll } from 'vitest'
 import { handlers } from '../mocks/handlers'
-import '@testing-library/jest-dom'
+import '@testing-library/jest-dom/vitest'
 
 
 // Ensure window.AbortController and window.AbortSignal are node's global built-in classes
@@ -29,4 +29,3 @@ const server = setupServer(...handlers)
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())
-

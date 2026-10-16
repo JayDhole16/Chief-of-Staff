@@ -147,6 +147,7 @@ export interface ActivityEvent {
   user_id: string
   action_ref?: string
   receipt_id?: string
+  escalation_id?: string
   rendered_hash?: string
   execute_after?: string
   can_undo?: boolean
@@ -155,6 +156,40 @@ export interface ActivityEvent {
 export interface ActivityFeedResponse {
   events: ActivityEvent[]
   count: number
+}
+
+export interface OperationsComponent {
+  status: 'ready' | 'degraded' | 'unavailable' | 'not_configured'
+  detail: string
+}
+
+export interface OperationsStatus {
+  status: 'ready' | 'degraded'
+  checked_at: string
+  data_mode: 'provisional'
+  kill_switch_active: boolean
+  components: Record<string, OperationsComponent>
+}
+
+export interface BriefLink {
+  kind: 'receipt' | 'approval' | 'escalation'
+  reference: string
+  href: string
+}
+
+export interface BriefItem {
+  event_id: string
+  timestamp: string
+  title: string
+  summary: string
+  link: BriefLink
+}
+
+export interface DailyBrief {
+  generated_at: string
+  items: BriefItem[]
+  omitted_unlinked_events: number
+  limitation: string
 }
 
 // Pipeline (T09.5)

@@ -13,10 +13,14 @@ Tests:
 - /api/auth/login & /api/session
 """
 
+from datetime import datetime, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.api.app import app, state
+from backend.contracts.read_api import ActivityEventItem, ActivityType
+from backend.services.tasks import TaskRepositoryUnavailableError
 
 
 @pytest.fixture(autouse=True)
@@ -38,6 +42,118 @@ def test_get_activity_feed(client: TestClient):
     assert "events" in data
     assert data["count"] >= 2
     assert any(e["type"] == "proposed" for e in data["events"])
+
+
+def test_health_endpoints(client: TestClient):
+    assert client.get("/healthz").json() == {"status": "ok"}
+    assert client.get("/api/healthz").json() == {"status": "ok"}
+    assert client.get("/readyz").json() == {"status": "ready"}
+
+
+def test_operations_status_reports_placeholder_integrations(client: TestClient):
+    response = client.get("/api/v1/ops/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "degraded"
+    assert payload["data_mode"] == "provisional"
+    assert payload["components"]["task_repository"]["status"] == "ready"
+    assert payload["components"]["worker"]["status"] == "degraded"
+    assert payload["components"]["google"]["status"] == "not_configured"
+    assert payload["components"]["agent_runtime"]["status"] == "not_configured"
+    assert payload["components"]["benchmarks"]["status"] == "not_configured"
+    assert payload["components"]["deployment"]["status"] == "not_configured"
+
+
+def test_operations_status_exposes_repository_failure(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def unavailable() -> bool:
+        raise TaskRepositoryUnavailableError("database is offline")
+
+    monkeypatch.setattr(state.task_repository, "health_check", unavailable)
+    response = client.get("/api/v1/ops/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "degraded"
+    assert payload["components"]["task_repository"]["status"] == "unavailable"
+    assert payload["components"]["task_repository"]["detail"] == "database is offline"
+
+
+def test_brief_items_only_include_resolvable_receipt_approval_or_escalation_links(
+    client: TestClient,
+):
+    baseline = client.get("/api/v1/brief")
+    assert baseline.status_code == 200
+    baseline_payload = baseline.json()
+    assert baseline_payload["omitted_unlinked_events"] == 0
+    assert {item["link"]["kind"] for item in baseline_payload["items"]} == {
+        "receipt",
+        "approval",
+    }
+
+    inject_response = client.post(
+        "/api/dev/inject-inbound",
+        json={
+            "message_id": "brief_escalation_001",
+            "from_email": "arjun@bluedart-franchise.in",
+            "subject": "Penalty clause demand",
+            "body": "We require a penalty clause and unlimited liability.",
+        },
+    )
+    assert inject_response.status_code == 200
+    assert inject_response.json()["escalation_id"]
+
+    updated = client.get("/api/v1/brief")
+    assert updated.status_code == 200
+    payload = updated.json()
+    assert payload["omitted_unlinked_events"] == 0
+    escalation_items = [item for item in payload["items"] if item["link"]["kind"] == "escalation"]
+    assert len(escalation_items) == 1
+    assert escalation_items[0]["link"]["reference"] == inject_response.json()["escalation_id"]
+    assert all(
+        item["link"]["kind"] in {"receipt", "approval", "escalation"}
+        and item["link"]["reference"]
+        and item["link"]["href"]
+        for item in payload["items"]
+    )
+
+
+def test_brief_reports_omitted_events_without_references(client: TestClient):
+    state.activity_events.append(
+        ActivityEventItem(
+            id="unlinked_event",
+            timestamp=datetime.now(timezone.utc),
+            type=ActivityType.EXECUTION,
+            title="Event without a reference",
+            description="Must not appear in the brief without a link.",
+            user_id="test",
+        )
+    )
+
+    response = client.get("/api/v1/brief")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["omitted_unlinked_events"] >= 1
+    assert all(
+        item["link"]["kind"] in {"receipt", "approval", "escalation"}
+        for item in payload["items"]
+    )
+
+
+def test_readiness_returns_service_unavailable_when_repository_is_down(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def unavailable() -> bool:
+        raise TaskRepositoryUnavailableError("database is offline")
+
+    monkeypatch.setattr(state.task_repository, "health_check", unavailable)
+    response = client.get("/readyz")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Task repository is not ready"
 
 
 def test_get_receipt_success_and_404(client: TestClient):

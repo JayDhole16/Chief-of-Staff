@@ -18,6 +18,8 @@ import type {
   ActionReceipt,
   CancelActionResponse,
   SystemSettings,
+  OperationsStatus,
+  DailyBrief,
 } from '../api/types'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
@@ -476,5 +478,48 @@ export const handlers = [
       },
       { status: 200 }
     )
+  }),
+
+  // GET /v1/ops/status (T13.1)
+  http.get(`${API_BASE}/v1/ops/status`, () => {
+    const response: OperationsStatus = {
+      status: 'degraded',
+      checked_at: new Date().toISOString(),
+      data_mode: 'provisional',
+      kill_switch_active: killSwitchState,
+      components: {
+        api: { status: 'ready', detail: 'Mock API responding' },
+        task_repository: { status: 'ready', detail: 'Mock task store' },
+        worker: { status: 'degraded', detail: 'Health-only placeholder; no jobs are executed' },
+        google: { status: 'not_configured', detail: 'Fake adapters only' },
+        agent_runtime: { status: 'not_configured', detail: 'No live agent configured' },
+        benchmarks: { status: 'not_configured', detail: 'No benchmark run recorded' },
+        deployment: { status: 'not_configured', detail: 'No approved target configured' },
+      },
+    }
+    return HttpResponse.json(response)
+  }),
+
+  // GET /v1/brief (T13.2)
+  http.get(`${API_BASE}/v1/brief`, () => {
+    const response: DailyBrief = {
+      generated_at: new Date().toISOString(),
+      items: [
+        {
+          event_id: 'evt_001',
+          timestamp: new Date().toISOString(),
+          title: 'Proposed follow-up to Raju Patel',
+          summary: 'Counter-offer drafted for founder approval.',
+          link: {
+            kind: 'approval',
+            reference: 'PA-2026-10-15-001',
+            href: `${API_BASE}/approvals/pending`,
+          },
+        },
+      ],
+      omitted_unlinked_events: 0,
+      limitation: 'Mock response; not live operational data.',
+    }
+    return HttpResponse.json(response)
   }),
 ]

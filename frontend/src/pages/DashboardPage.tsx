@@ -13,6 +13,8 @@ import type {
   Deal,
   ActivityEvent,
   SystemSettings,
+  OperationsStatus,
+  DailyBrief,
 } from '../api/types'
 import { apiCall } from '../api/client'
 import { ApprovalCard } from '../components/ApprovalCard'
@@ -25,13 +27,14 @@ export interface DashboardPageProps {
   onLogout: () => void
 }
 
-type TabId = 'command' | 'approvals' | 'activity' | 'pipeline' | 'settings'
+type TabId = 'command' | 'approvals' | 'activity' | 'pipeline' | 'operations' | 'settings'
 
 const TABS: Array<{ id: TabId; label: string; icon: string }> = [
   { id: 'command', label: 'Command', icon: '⚡' },
   { id: 'approvals', label: 'Approvals', icon: '✓' },
   { id: 'activity', label: 'Activity', icon: '📋' },
   { id: 'pipeline', label: 'Pipeline', icon: '📊' },
+  { id: 'operations', label: 'Ops', icon: 'ℹ️' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
 ]
 
@@ -50,6 +53,8 @@ export function DashboardPage({ session, onLogout }: DashboardPageProps): JSX.El
         return <ActivityTab />
       case 'pipeline':
         return <PipelineTab />
+      case 'operations':
+        return <OperationsTab />
       case 'settings':
         return (
           <SettingsTab
@@ -414,6 +419,93 @@ function PipelineTab(): JSX.Element {
       error={error}
       onRefresh={fetchDeals}
     />
+  )
+}
+
+function OperationsTab(): JSX.Element {
+  const [status, setStatus] = useState<OperationsStatus | null>(null)
+  const [brief, setBrief] = useState<DailyBrief | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  const refresh = async () => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const [operationsStatus, dailyBrief] = await Promise.all([
+        apiCall<OperationsStatus>('/v1/ops/status'),
+        apiCall<DailyBrief>('/v1/brief'),
+      ])
+      setStatus(operationsStatus)
+      setBrief(dailyBrief)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void refresh()
+  }, [])
+
+  return (
+    <section style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>Operations & Brief</h2>
+        <button type="button" onClick={() => void refresh()} disabled={isLoading}>
+          {isLoading ? 'Loading…' : 'Refresh'}
+        </button>
+      </div>
+      <p style={{ margin: 0, fontSize: '0.75rem', color: '#92400e' }}>
+        Provisional local/demo status. This is not evidence of live G4 or production readiness.
+      </p>
+      {error && (
+        <p role="alert" style={{ color: '#991b1b', fontSize: '0.8125rem' }}>
+          Could not load operations data: {error}
+        </p>
+      )}
+      {status && (
+        <div data-testid="operations-status">
+          <h3 style={{ fontSize: '0.875rem' }}>
+            System status: {status.status} · Kill switch: {status.kill_switch_active ? 'active' : 'off'}
+          </h3>
+          <ul style={{ paddingLeft: '1.25rem', fontSize: '0.75rem' }}>
+            {Object.entries(status.components).map(([name, component]) => (
+              <li key={name} style={{ marginBottom: '0.375rem' }}>
+                <strong>{name}: {component.status}</strong> — {component.detail}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {brief && (
+        <div data-testid="daily-brief">
+          <h3 style={{ fontSize: '0.875rem' }}>Recent activity</h3>
+          {brief.omitted_unlinked_events > 0 && (
+            <p role="status" style={{ fontSize: '0.75rem' }}>
+              {brief.omitted_unlinked_events} unlinked event(s) omitted from this brief.
+            </p>
+          )}
+          {brief.items.length === 0 ? (
+            <p style={{ fontSize: '0.75rem' }}>No linked activity is available.</p>
+          ) : (
+            <ul style={{ paddingLeft: '1.25rem', fontSize: '0.75rem' }}>
+              {brief.items.map((item) => (
+                <li key={item.event_id} style={{ marginBottom: '0.625rem' }}>
+                  <strong>{item.title}</strong>
+                  <p style={{ margin: '0.25rem 0' }}>{item.summary}</p>
+                  <a href={item.link.href}>
+                    View {item.link.kind}: {item.link.reference}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p style={{ fontSize: '0.6875rem', color: '#6b7280' }}>{brief.limitation}</p>
+        </div>
+      )}
+    </section>
   )
 }
 

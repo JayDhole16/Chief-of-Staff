@@ -18,7 +18,7 @@ export function usePolling({ interval, onFetch, onError }: UsePollingOptions): {
 } {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const backoffRef = useRef(1) // Exponential backoff multiplier
 
   const onFetchRef = useRef(onFetch)
