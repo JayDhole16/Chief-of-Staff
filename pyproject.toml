@@ -13,7 +13,10 @@ authors = [
 ]
 dependencies = [
     "fastapi>=0.104.1",
+<<<<<<< HEAD
     "uvicorn[standard]>=0.24.0",
+=======
+>>>>>>> d391f671df8a2962e190545fd3b50665f195c60a
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
     "sqlalchemy>=2.0.23",
@@ -34,9 +37,12 @@ dev = [
     "ruff>=0.1.11",
     "mypy>=1.7.1",
     "types-requests",
+<<<<<<< HEAD
     "import-linter>=2.3.0",
     "pre-commit>=3.6.0",
     "pip-audit>=2.7.0",
+=======
+>>>>>>> d391f671df8a2962e190545fd3b50665f195c60a
 ]
 
 [tool.setuptools.packages.find]
@@ -62,6 +68,7 @@ python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
+<<<<<<< HEAD
 
 [tool.importlinter]
 root_package = "backend"
@@ -156,3 +163,5 @@ forbidden_modules = [
     "backend.services",
     "backend.worker",
 ]
+=======
+>>>>>>> d391f671df8a2962e190545fd3b50665f195c60a
