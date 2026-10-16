@@ -17,6 +17,7 @@ import type {
 import { apiCall } from '../api/client'
 import { ApprovalCard } from '../components/ApprovalCard'
 import { ActivityFeed } from '../components/ActivityFeed'
+import { FounderBriefView } from '../components/FounderBriefView'
 import { PipelineView } from '../components/PipelineView'
 import { SettingsView } from '../components/SettingsView'
 
@@ -200,7 +201,7 @@ export function DashboardPage({ session, onLogout }: DashboardPageProps): JSX.El
 function CommandTab({ killSwitchActive }: { killSwitchActive: boolean }): JSX.Element {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>Quick Commands</h2>
+      <FounderBriefView />
       <div
         style={{
           padding: '1rem',
@@ -213,7 +214,7 @@ function CommandTab({ killSwitchActive }: { killSwitchActive: boolean }): JSX.El
           Autonomous Chief of Staff is monitoring your Gmail and Calendar. Quiet proposals are swept under active mandates.
         </div>
         <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: '#6b7280' }}>
-          Status: {killSwitchActive ? 'Autonomy Paused' : 'Ready for text/voice mandate input'}
+          Status: {killSwitchActive ? '🛑 Autonomy Paused (Kill Switch Active)' : '⚡ Ready for text/voice mandate input'}
         </div>
       </div>
     </div>

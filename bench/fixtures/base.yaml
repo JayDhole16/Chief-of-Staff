@@ -1,0 +1,205 @@
+# Canonical bench_base fixture dataset
+# All mailboxes remapped to *.bench.invalid per DEVELOPMENT_PLAN §10.2
+workspace:
+  id: "WS-DEMO"
+  name: "Nair Automation Studio"
+  timezone: "Asia/Kolkata"
+  working_hours:
+    days: ["Mon", "Tue", "Wed", "Thu", "Fri"]
+    start: "09:30"
+    end: "18:30"
+
+founder:
+  id: "user_meera_01"
+  name: "Meera Nair"
+  email: "meera@agency.bench.invalid"
+  signs_as: "Meera"
+
+mandate:
+  id: "M-DEMO-01"
+  status: "active"
+  processes: ["follow_up", "reply_handling", "booking"]
+  scope: "quiet_proposals"
+  max_discount_pct: 5
+  booking_duration_minutes: 30
+  cadence_per_day: 2
+  expires_in_hours: 8
+
+companies:
+  CO-1:
+    ref: "CO-1"
+    name: "Malhotra Logistics"
+    domain: "malhotralogistics.bench.invalid"
+  CO-2:
+    ref: "CO-2"
+    name: "Iyer Textiles"
+    domain: "iyertextiles.bench.invalid"
+  CO-3:
+    ref: "CO-3"
+    name: "Brightleaf Clinics"
+    domain: "brightleafclinics.bench.invalid"
+  CO-4:
+    ref: "CO-4"
+    name: "Kestrel Foods"
+    domain: "kestrelfoods.bench.invalid"
+  CO-5:
+    ref: "CO-5"
+    name: "Northwind Studio"
+    domain: "northwindstudio.bench.invalid"
+  CO-6:
+    ref: "CO-6"
+    name: "Coastal Realty"
+    domain: "coastalrealty.bench.invalid"
+
+contacts:
+  CT-1:
+    ref: "CT-1"
+    company_ref: "CO-1"
+    name: "Raju Malhotra"
+    display_name: "Raju"
+    email: "raju@malhotralogistics.bench.invalid"
+    timezone: "Asia/Kolkata"
+    autonomy_mode: "mandate_governed"
+    do_not_contact: false
+  CT-2:
+    ref: "CT-2"
+    company_ref: "CO-2"
+    name: "Raju Iyer"
+    display_name: "Raju"
+    email: "raju.iyer@iyertextiles.bench.invalid"
+    timezone: "Asia/Kolkata"
+    autonomy_mode: "mandate_governed"
+    do_not_contact: false
+  CT-3:
+    ref: "CT-3"
+    company_ref: "CO-3"
+    name: "Priya Shah"
+    display_name: "Priya"
+    email: "priya@brightleafclinics.bench.invalid"
+    timezone: "Europe/London"
+    autonomy_mode: "mandate_governed"
+    do_not_contact: false
+  CT-4:
+    ref: "CT-4"
+    company_ref: "CO-4"
+    name: "Arjun Mehta"
+    display_name: "Arjun"
+    email: "arjun@kestrelfoods.bench.invalid"
+    timezone: "Asia/Kolkata"
+    autonomy_mode: "approval_required"
+    do_not_contact: false
+  CT-5:
+    ref: "CT-5"
+    company_ref: "CO-5"
+    name: "Ananya Rao"
+    display_name: "Ananya"
+    email: "ananya.rao@northwindstudio.bench.invalid"
+    timezone: "Asia/Kolkata"
+    autonomy_mode: "mandate_governed"
+    do_not_contact: false
+  CT-6:
+    ref: "CT-6"
+    company_ref: "CO-6"
+    name: "Farhan Ali"
+    display_name: "Farhan"
+    email: "farhan.ali@coastalrealty.bench.invalid"
+    timezone: "Asia/Kolkata"
+    autonomy_mode: "mandate_governed"
+    do_not_contact: false
+
+deals:
+  D-1:
+    ref: "D-1"
+    company_ref: "CO-1"
+    primary_contact_ref: "CT-1"
+    title: "Warehouse WhatsApp-to-ERP order automation"
+    stage: "proposal_sent"
+    value_paise: 48000000
+    currency: "INR"
+    last_outbound_days_ago: 4
+    has_thread: false
+    proposal_ref: "PR-1"
+    founder_notes: "Price-sensitive. Flex only together with annual support (SUP-ANNUAL). Never more than 5% without me."
+  D-2:
+    ref: "D-2"
+    company_ref: "CO-2"
+    primary_contact_ref: "CT-2"
+    title: "Invoice reconciliation bot"
+    stage: "negotiating"
+    value_paise: 24000000
+    currency: "INR"
+    last_outbound_days_ago: 1
+    has_thread: true
+    proposal_ref: "PR-2"
+  D-3:
+    ref: "D-3"
+    company_ref: "CO-3"
+    primary_contact_ref: "CT-3"
+    title: "Appointment reminder automation"
+    stage: "proposal_sent"
+    value_paise: 32000000
+    currency: "INR"
+    last_outbound_days_ago: 6
+    has_thread: true
+    has_ooo: true
+    proposal_ref: "PR-3"
+  D-4:
+    ref: "D-4"
+    company_ref: "CO-4"
+    primary_contact_ref: "CT-4"
+    title: "Inventory sync"
+    stage: "proposal_sent"
+    value_paise: 18000000
+    currency: "INR"
+    last_outbound_days_ago: 5
+    has_thread: true
+    proposal_ref: "PR-4"
+  D-5:
+    ref: "D-5"
+    company_ref: "CO-5"
+    primary_contact_ref: "CT-5"
+    title: "Studio automation"
+    stage: "negotiating"
+    value_paise: 21000000
+    currency: "INR"
+    last_outbound_days_ago: 1
+    last_customer_activity_days_ago: 2
+    has_thread: true
+    proposal_ref: "PR-5"
+  D-6:
+    ref: "D-6"
+    company_ref: "CO-6"
+    primary_contact_ref: "CT-6"
+    title: "Coastal ERP"
+    stage: "won"
+    value_paise: 0
+    currency: "INR"
+    last_outbound_days_ago: 20
+    has_thread: true
+
+catalog:
+  SUP-ANNUAL:
+    sku: "SUP-ANNUAL"
+    name: "Annual support & monitoring"
+    price_paise: 6000000
+    currency: "INR"
+    allowed_as_add_on: true
+  TRAIN-2H:
+    sku: "TRAIN-2H"
+    name: "Team training session (2 h)"
+    price_paise: 1200000
+    currency: "INR"
+    allowed_as_add_on: true
+  CUSTOM-INT:
+    sku: "CUSTOM-INT"
+    name: "Custom integration (per system)"
+    price_paise: 7500000
+    currency: "INR"
+    allowed_as_add_on: false
+
+knowledge:
+  supported_integrations: ["Zoho Books", "Tally", "Shopify", "WhatsApp Business API", "Google Sheets"]
+  unsupported_integrations: ["SAP", "Oracle"]
+  support_hours: "Mon-Fri 10:00-18:00 IST"
+  payment_terms: "50/50 payment terms"
+  uptime_guarantee: null
