@@ -71,7 +71,10 @@ jobs:
           tests/test_policy_engine.py
           tests/test_tasks_postgres.py
           tests/test_worker_health.py
+<<<<<<< HEAD
           scripts/smoke_app.py
+=======
+>>>>>>> 7fac91b5d6eca0b999cbddaba8c49e1d87bbe5ec
       - run: python -m pytest -q
       - run: pip-audit
 
@@ -99,6 +102,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker compose up -d --build
+<<<<<<< HEAD
       - name: Verify application health
         run: |
           for attempt in $(seq 1 30); do
@@ -110,5 +114,12 @@ jobs:
           done
           docker compose logs
           exit 1
+=======
+      - name: Verify web proxy and worker health
+        run: |
+          curl --fail --retry 30 --retry-connrefused --retry-delay 2 http://localhost:3000/api/healthz
+          curl --fail --retry 30 --retry-connrefused --retry-delay 2 http://localhost:8081/health
+          docker compose ps
+>>>>>>> 7fac91b5d6eca0b999cbddaba8c49e1d87bbe5ec
       - if: always()
         run: docker compose down -v

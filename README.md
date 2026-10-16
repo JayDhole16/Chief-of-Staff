@@ -17,6 +17,7 @@ Open the frontend at `http://localhost:3000`; the API is also available at
 `/api` proxy targets the API container, and
 `http://localhost:3000/api/healthz` checks that route end to end. The worker health
 endpoint is at `http://localhost:8081/health`. Stop the stack with `docker compose down`.
+<<<<<<< HEAD
 After startup, `python scripts/smoke_app.py` checks the web page, API proxy, API
 readiness, and worker health. It reports that the worker is only a placeholder until
 the durable executor is implemented.
@@ -28,6 +29,8 @@ fake or unavailable integrations and returns `degraded` until every required loc
 component is ready. The brief omits events without a resolvable receipt, approval, or
 escalation link and reports the omission count. These endpoints describe local demo
 state only and are not live G4 or production evidence.
+=======
+>>>>>>> 7fac91b5d6eca0b999cbddaba8c49e1d87bbe5ec
 
 This is a development stack, not the planned production architecture. PostgreSQL
 stores provisional inbound tasks only; other application state remains in memory.

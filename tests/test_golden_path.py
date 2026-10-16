@@ -323,6 +323,7 @@ def test_worker_serializes_duplicate_action_dispatch(client: TestClient):
     content = "One authorized message"
     content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
+<<<<<<< HEAD
     for attempt in range(20):
         action_ref = f"PA-CONCURRENT-TEST-{attempt}"
 
@@ -365,6 +366,24 @@ def test_prompt_injection_in_inbound_never_executes_an_external_action(client: T
     assert state.gmail_adapter.sent_messages == []
     assert state.calendar_adapter.created_events == []
     assert set(state.proposals) == proposal_refs_before
+=======
+    def dispatch():
+        return state.executor.execute_action(
+            action_ref="PA-CONCURRENT-TEST",
+            action_kind="email",
+            recipient_email="sunil@apexlogistics.in",
+            rendered_body_or_time=content,
+            rendered_hash=content_hash,
+            authority_clause="Founder Explicit Approval",
+            is_founder_approved=True,
+        )
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        receipts = list(pool.map(lambda _: dispatch(), range(16)))
+
+    assert len({receipt.receipt_id for receipt in receipts}) == 1
+    assert len(state.gmail_adapter.sent_messages) == 1
+>>>>>>> 7fac91b5d6eca0b999cbddaba8c49e1d87bbe5ec
 
 
 def test_worker_calendar_requires_real_interval(client: TestClient):

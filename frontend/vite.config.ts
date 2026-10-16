@@ -5,14 +5,22 @@ import { fileURLToPath } from 'node:url'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+<<<<<<< HEAD
   const configDir = path.dirname(fileURLToPath(import.meta.url))
+=======
+>>>>>>> 7fac91b5d6eca0b999cbddaba8c49e1d87bbe5ec
 
   return {
     plugins: [react()],
     resolve: {
       alias: {
+<<<<<<< HEAD
         '@': path.resolve(configDir, './src'),
         '@/mocks': path.resolve(configDir, './src/mocks'),
+=======
+        '@': path.resolve(__dirname, './src'),
+        '@/mocks': path.resolve(__dirname, './src/mocks'),
+>>>>>>> 7fac91b5d6eca0b999cbddaba8c49e1d87bbe5ec
       },
     },
     server: {

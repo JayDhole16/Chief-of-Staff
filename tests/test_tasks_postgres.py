@@ -1,5 +1,8 @@
 import os
+<<<<<<< HEAD
 from concurrent.futures import ThreadPoolExecutor
+=======
+>>>>>>> 7fac91b5d6eca0b999cbddaba8c49e1d87bbe5ec
 from uuid import uuid4
 
 import psycopg
@@ -88,6 +91,7 @@ def test_postgres_task_rejects_conflicting_replay(task_service):
         )
 
 
+<<<<<<< HEAD
 def test_postgres_task_concurrent_replay_is_idempotent(task_service):
     service, workspace = task_service
 
@@ -109,6 +113,8 @@ def test_postgres_task_concurrent_replay_is_idempotent(task_service):
     assert len({task.version for task in tasks}) == 1
 
 
+=======
+>>>>>>> 7fac91b5d6eca0b999cbddaba8c49e1d87bbe5ec
 def test_postgres_task_transition_uses_optimistic_version(task_service):
     service, workspace = task_service
     task = service.create_task(

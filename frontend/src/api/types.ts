@@ -232,3 +232,48 @@ export interface SystemSettings {
     reason?: string
   }
 }
+
+// Founder Brief (T13.2)
+export interface BriefFactEvidence {
+  key: string
+  label: string
+  value: string
+  source: string
+}
+
+export interface BriefItem {
+  id: string
+  category: 'executed_action' | 'pending_decision' | 'escalation' | 'pipeline_quiet' | 'blocked_action'
+  deal_id?: string
+  deal_title?: string
+  contact_name?: string
+  contact_email?: string
+  summary: string
+  status: string
+  authority_clause?: string
+  evidence_receipt_id?: string
+  evidence_action_ref?: string
+  evidence_facts: BriefFactEvidence[]
+  risk_flags: string[]
+  recommended_followup?: string
+}
+
+export interface BriefMetrics {
+  actions_executed_count: number
+  pending_approvals_count: number
+  escalations_count: number
+  blocked_actions_count: number
+  total_pipeline_value_paise: number
+  estimated_founder_minutes_saved: number
+}
+
+export interface FounderBrief {
+  workspace_id: string
+  generated_at: string
+  headline: string
+  metrics: BriefMetrics
+  items: BriefItem[]
+  narration_text: string
+  is_audio_available: boolean
+  disclaimer: string
+}

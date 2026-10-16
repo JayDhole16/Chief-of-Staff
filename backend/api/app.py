@@ -36,6 +36,13 @@ from backend.contracts.read_api import (
     ReceiptStatus,
     ReceiptTimelineItem,
 )
+<<<<<<< HEAD
+=======
+from backend.services.brief import (
+    FounderBriefResponse,
+    FounderBriefService,
+)
+>>>>>>> 7fac91b5d6eca0b999cbddaba8c49e1d87bbe5ec
 from backend.services.executor import (
     FakeCalendarAdapter,
     FakeGmailAdapter,
@@ -793,6 +800,7 @@ def create_app() -> FastAPI:
 
         return EscalationsResponse(escalations=state.escalations, count=len(state.escalations))
 
+<<<<<<< HEAD
     @app.get("/api/v1/ops/status", response_model=OperationsStatusResponse)
     def get_operations_status():
         try:
@@ -900,6 +908,49 @@ def create_app() -> FastAPI:
                 "operational record."
             ),
         )
+=======
+    @app.get("/api/brief", response_model=FounderBriefResponse)
+    def get_founder_brief(x_workspace_id: str = Header(default="WS-DEMO")):
+        # Sync escalations from inbound pipeline
+        for esc in state.inbound_pipeline.created_escalations:
+            if not any(e.escalation_id == esc["escalation_id"] for e in state.escalations):
+                state.escalations.append(EscalationItem(
+                    escalation_id=esc["escalation_id"],
+                    created_at=esc["created_at"],
+                    severity=EscalationSeverity(esc["severity"]),
+                    source_message_id=esc["source_message_id"],
+                    deal_id=esc["deal_id"],
+                    contact_email=esc["contact_email"],
+                    reason=esc["reason"],
+                    guard_code=esc.get("guard_code"),
+                    status="open",
+                ))
+
+        if x_workspace_id != "WS-DEMO":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Unauthorized access to workspace 'WS-DEMO' from '{x_workspace_id}'",
+            )
+
+        deals_response = get_deals()
+        brief_service = FounderBriefService(workspace_id="WS-DEMO")
+        proposals_list = [p.model_dump() for p in state.proposals.values()]
+        receipts_list = list(state.receipts.values())
+
+        try:
+            brief = brief_service.generate_brief(
+                receipts=receipts_list,
+                proposals=proposals_list,
+                deals=deals_response.deals,
+                escalations=state.escalations,
+                activity_events=state.activity_events,
+                requesting_workspace_id=x_workspace_id,
+            )
+            return brief
+        except PermissionError as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+>>>>>>> 7fac91b5d6eca0b999cbddaba8c49e1d87bbe5ec
 
     # -----------------------------------------------------------------------
     # Settings & Kill Switch (T09.5)

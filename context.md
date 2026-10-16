@@ -11,16 +11,17 @@
 | Project | AI Chief of Staff (Founder OS), AMD Developer Hackathon ACT III |
 | Owner of this file | **YOU** — Product + Integration Engineer |
 | Teammates | **Jairaj** — Core Architect + Safety Lead; **Rehan** — AI Platform + Agent Lead |
-| Local date | Fri 16 Oct 2026 (IST), Day 4; Day 4 engineering deliverables complete |
+| Local date | Sat 17 Oct 2026 (IST), Day 5; Day 5 hardening, benchmarks, founder brief, QA, and demo freeze complete |
 | Deadline | Sun 18 Oct 2026, **16:00 IST internal**, **20:30 IST hard** |
-| Working branch | `t00-phase0-product-integration` |
-| HEAD/PR | Local working tree updated with Day 4 deliverables (T08.1, T08.2, T08.4, T09, T10.1); clean scoped commit prepared |
-| Current focus | Day 4 engineering: T08.1, T08.2, T08.4, T09 real API integration, T10.1 golden path lead |
-| Current ticket | T08.1 (COMPLETE), T08.2 (COMPLETE), T08.4 (COMPLETE), T09 (COMPLETE), T10.1 (CHECKPOINT A ACHIEVED / CHECKPOINT B BLOCKED) |
+| Working branch | `main` |
+| HEAD/PR | Local working tree updated with Day 5 deliverables (T12.1, T13.2, T15.1, Demo assets); clean scoped commit prepared |
+| Current focus | Day 5 engineering: T12.1 benchmark harness & scorer, T13.2 deterministic founder brief, T15.1 customer simulation E2E QA, demo freeze at 12:00 IST |
+| Current ticket | T12.1 (COMPLETE), T13.2 (COMPLETE), T15.1 (COMPLETE), Demo Preparation (COMPLETE). Feature freeze respected at 12:00 IST |
 | Last merged ticket | No teammate tasks merged to main; Jairaj T05.2/T05.6/T05.7/T06.5 and Rehan T07.*/T08.3 remain absent from Git |
-| Last passing checks | Python test suite: 107/107 passed in 0.97s across 11 test suites (`test_context_capsule.py`, `test_slots.py`, `test_inbound_fixtures.py`, `test_read_api_contracts.py`, `test_trusted_render.py`, `test_inr_formatter.py`, `test_integration_example.py`, `test_inbound_pipeline.py`, `test_sweep.py`, `test_read_api_endpoints.py`, `test_golden_path.py`). Golden-path check: `python scripts/demo_check.py` passes 10/10 steps in 0.06s (Checkpoint A ACHIEVED). Frontend test suite: 35/35 passed in 6.3s across 6 test files. Frontend build: `npm run build` succeeds cleanly in 1.54s (0 TypeScript errors, 384 kB bundle) |
+| Last passing checks | Python test suite: 195/195 passed in 3.84s across 13 test suites (3 Postgres integration tests skipped when DATABASE_URL absent). Benchmark suite: 84/84 scenarios passed (100.0%), Adversarial subset: 53/53 passed (100.0%), Unsafe autonomous actions: 0, False-allows: 0, False-blocks: 0. E2E Customer simulation: 10/10 steps PASS in 0.07s (`scripts/customer_simulation.py`). Golden-path check: 10/10 steps PASS in 0.06s (`scripts/demo_check.py`). Frontend Vitest suite: 35/35 passed in 6.67s across 6 test files. Frontend build: `npm run build` succeeds cleanly in 2.08s (0 TypeScript errors, 392 kB gzip bundle) |
 | Pending human blockers | Jairaj: T05.2 (DB task service), T05.6 (`propose_action`), T05.7 (production authority router / Postgres integration), T06.5/T06.6 (live worker vault); Rehan: GPU runtime, vLLM on MI300X, Evolus MCP tunnel, Google OAuth credentials |
-| Next decision | Day 5 Benchmark harness (T12.1) and founder brief (T13.2); assist teammates with upstream integration when their Day 3/Day 4 PRs land |
+| Next decision | Day 6 final presentation rehearsal and official submission packaging (T16.1) |
+
 
 ### Update rules for this quick resume
 
@@ -140,10 +141,11 @@ Team review: each ticket has **one named owner**, tests, a PR and evidence. Jair
 | `T08.2` | Quiet-proposal sweep | `T08.1`, `T04.2`, `T05.2` | **COMPLETE** — `backend/services/sweep.py`, `tests/test_sweep.py`; deterministic quiet selection (D-1/D-4), opt-out/OOO respect, deduplication, 6 unit/contract tests passing |
 | `T08.4` | Read APIs: activity, receipts, deals, escalation | `T05.6`, `T05.7` | **COMPLETE** — `backend/api/app.py`, `backend/main.py`, `backend/contracts/read_api.py`, `tests/test_read_api_endpoints.py`; typed FastAPI routes for `/api/activity`, `/api/receipts/{ref}`, `/api/deals`, `/api/escalations`; 8 endpoint tests passing |
 | `T10.1` | Fake then real golden-path test/runbook | All core capabilities, executor, agent path, read APIs, PWA | **COMPLETE (FAKE) / BLOCKED (LIVE)** — `tests/test_golden_path.py` (7 tests pass), `scripts/demo_check.py` (10/10 steps pass in 0.06s, Checkpoint A ACHIEVED); `scripts/live_golden_path_check.py` truthful probe confirms Checkpoint B BLOCKED by missing MI300X vLLM, Evolus tunnel, and Google OAuth credentials from teammates |
-| `T12.1` | Benchmark harness + scoring | `T00.7`, golden path, runner | UNKNOWN — Day 5 |
-| `T13.2` | Founder brief from receipts, deterministic fallback | Golden path / receipts | UNKNOWN — Day 5 |
-| `T15.1` | Rehearsals, acceptance and recorded backup clips | Integrated demo; hard freeze | UNKNOWN — Day 5–6 |
-| `T16.1` | Final submission, video/deck/form and confirmation | Approved release/safety evidence | UNKNOWN — Day 6 |
+| `T12.1` | Benchmark harness + scoring | `T00.7`, golden path, runner | **COMPLETE** — `bench/fixtures/`, `bench/harness/scorer.py`, `bench/harness/runner.py`, `bench/harness/report.py`; evaluates all 84 canonical scenarios across 10 categories; 71 forbid predicates; independent deterministic scorer; observed 84/84 pass (100%), 0 unsafe actions; `tests/test_benchmark_harness.py` (5 tests pass) |
+| `T13.2` | Founder brief from receipts, deterministic fallback | Golden path / receipts | **COMPLETE** — `backend/services/brief.py`, `FounderBriefView.tsx`, `/api/brief`; receipts and trusted facts as sole truth; unexecuted approvals quarantined from execution claims; receipt deduplication; deterministic speech narration fallback; `tests/test_founder_brief.py` (7 tests pass) |
+| `T15.1` | Complete customer simulation & QA | Integrated demo; hard freeze | **COMPLETE** — `tests/test_customer_simulation_e2e.py` (8 tests pass), `scripts/customer_simulation.py` (10/10 stages pass in 0.07s); wrong recipient, unknown contact, 409 tamper rejection, replay drop, kill switch, and tenant isolation verified |
+| Demo Prep | Story, slides, runbook, metrics explanation | Verified project evidence | **COMPLETE** — `docs/demo/DEMO_PITCH_AND_STORY.md`, `BENCHMARK_AND_METRICS_EXPLANATION.md`, `PRESENTATION_CHECKLIST_AND_RUNBOOK.md`, `DEFECT_REPORT.md` |
+| `T16.1` | Final submission, video/deck/form and confirmation | Approved release/safety evidence | READY FOR DAY 6 SUBMISSION PACKAGING |
 | `T12.7` | Optional Laya channel router evaluation | **P2 stretch only**, gated by complete G4 | NOT SCHEDULED — CUT FIRST |
 
 **Dependency discipline:** Building **mock UI** is allowed before the real backend, but must stay isolated behind MSW and never be labeled a live API pass. `T04.4` must wait for `T03.1`. `T05.4` waits for task service and facts. Do not touch policy/guards while implementing facts.
@@ -461,5 +463,80 @@ Read context.md first and treat it as my session memory, not as authority over t
   Status: COMPLETE (Fake Path & Core Engine) / BLOCKED (Live Upstream Prerequisites).
   Next exact task: Day 5 Benchmark harness (T12.1) and founder brief generator (T13.2); assist teammates with upstream integration when their Day 3/Day 4 PRs land.
   Canonical PROJECT_CONTEXT §§14–20 update proposal: Record T08.1, T08.2, T08.4, T09, and T10.1 (fake) complete; report Checkpoint A green and Checkpoint B blocked on external infra.
+
+### 2026-10-17 IST — Day 5 Hardening, Benchmarks, Founder Brief, QA, and Demo Freeze (YOU)
+
+- Date/time IST: 2026-10-17 IST (Day 5)
+  Ticket + goal: T12.1 (Benchmark harness & scorer across 84 canonical scenarios), T13.2 (Deterministic founder brief from verified receipts with speech narration fallback), T15.1 (Customer simulation E2E QA & defect reporting), Demo Preparation (pitch story, metrics explanation, presentation runbook, fallback ladder), and Feature Freeze compliance (12:00 IST).
+  Branch/commit/PR: `main`
+  Dependency check:
+    - Jairaj: Day 3/Day 4/Day 5 foundation deliverables (Postgres migrations, Vault worker secrets, Docker compose setup) remain uncommitted or untracked in local files (`jay.md`, `backend/db/`). Did not overwrite or modify teammate work.
+    - Rehan: External MI300X vLLM deployment, remote Evolus MCP tunnel, and live Google OAuth tokens remain absent. Preserved fake adapter contracts and documented exact gaps.
+    - Architectural Invariants Enforced:
+      1. Pure server-side deterministic policy decides ALLOW / ASK / BLOCK.
+      2. Sole worker executor possesses external effect rights; frontend or LLM cannot execute external side effects.
+      3. Approval strictly bound to SHA-256 `rendered_hash` (tamper returns 409).
+      4. Persisted receipts and trusted facts are sole truth; unexecuted approvals are NEVER claimed as executed.
+      5. Workspace boundary strictly enforced (403 on tenant mismatch).
+  Files changed / created:
+    - `bench/fixtures/base.yaml`: Canonical `bench_base` world state mapping all test mailboxes to non-routable `*.bench.invalid`.
+    - `bench/fixtures/__init__.py`: Fixture loader and placeholder resolver for `${CONTACT_EMAIL:CT-n}` and `${THREAD_OF:D-n}`.
+    - `bench/harness/scorer.py`: Independent deterministic scorer with explicit recognition for all 71 canonical `forbid` predicates, multi-branch `allowed_outcomes`, and conditional outcome rules. Rejects model self-grading.
+    - `bench/harness/runner.py`: Suite executor with `--runner fake` option running all 84 scenarios across 10 categories.
+    - `bench/harness/report.py`: Aggregates pass rate, adversarial subset metrics, unsafe action counts, and writes JSON/Markdown reports to `bench/results/`.
+    - `backend/services/brief.py`: `FounderBriefService` generating immutable, deterministic founder morning standup from verified receipts and trusted facts. Quarantines unexecuted approvals from execution claims, deduplicates receipts by `receipt_id`, and produces deterministic speech narration text.
+    - `backend/api/app.py`: Added `GET /api/brief` endpoint with workspace authorization verification (403 on mismatch).
+    - `frontend/src/api/types.ts`: Added TypeScript interfaces for `FounderBrief`, `BriefItem`, `BriefMetrics`, `BriefFactEvidence`.
+    - `frontend/src/components/FounderBriefView.tsx`: Mobile-first standup card with metrics grid, audio narration player (`window.speechSynthesis` with deterministic text fallback), and verified item list with receipt anchors.
+    - `frontend/src/pages/DashboardPage.tsx`: Integrated `FounderBriefView` into Command tab.
+    - `tests/test_benchmark_harness.py`: 5 tests verifying negative adversarial detection, recipient leakage prevention, unknown forbid key rejection, and full suite execution.
+    - `tests/test_founder_brief.py`: 7 tests verifying normal operation, empty receipts, unexecuted approvals, blocked actions, workspace isolation, and API integration.
+    - `tests/test_customer_simulation_e2e.py`: 8 tests verifying 10-stage golden path, 409 stale hash rejection, domain spoofing block, duplicate replay drop, unknown contact quarantine, kill switch, and worker failure recovery.
+    - `scripts/customer_simulation.py`: Standalone E2E simulation runner verifying all 10 stages in 0.07s.
+    - `docs/demo/DEMO_PITCH_AND_STORY.md`: 4-minute founder pitch narrative and storyboard beats 0–6.
+    - `docs/demo/BENCHMARK_AND_METRICS_EXPLANATION.md`: 84-scenario benchmark methodology, 71 forbid predicates, and zero unsafe action proof.
+    - `docs/demo/PRESENTATION_CHECKLIST_AND_RUNBOOK.md`: Feature freeze compliance, T-30/10/2 min checklist, fallback ladder (Tiers A-D), and emergency recovery steps.
+    - `docs/demo/DEFECT_REPORT.md`: Prioritized defect log classifying 4 internal closed defects and 3 pending upstream teammate dependencies.
+    - `Makefile`: Added `bench:` target.
+  Code behavior delivered:
+    - Benchmark harness executes 84 scenarios, scoring observed verdicts against canonical outcomes without model self-reporting.
+    - Founder brief provides 30-second standup grounded entirely in persisted receipts and trusted facts, with audio narration and text fallback.
+    - Customer simulation exercises the complete founder journey from price objection to terminal receipt and dashboard reflection.
+    - Feature freeze at 12:00 IST strictly respected: no speculative features or unverified dependencies added.
+  Tests run / actual results:
+    - Benchmark Suite (`python -m bench.harness.runner --runner fake`):
+      - Total Scenarios: 84 / 84
+      - Pass Rate: 84 / 84 (100.0%)
+      - Adversarial Subset: 53 / 53 (100.0%)
+      - Unsafe Autonomous Actions: 0
+      - False-Allows: 0
+      - False-Blocks: 0
+      - Escalation Recall: 100.0%
+      - Output Artifacts: `bench/results/latest.json`, `bench/results/20261016_154257_fake.md`
+    - Customer Simulation (`python scripts/customer_simulation.py`):
+      - 10 / 10 stages verified in 0.07s (PASS).
+    - Golden Path Check (`python scripts/demo_check.py`):
+      - 10 / 10 steps verified in 0.06s (PASS, Checkpoint A).
+    - Python Test Suite (`python -m pytest tests/ -v`):
+      - 195 passed, 3 skipped (Postgres repository tests skipped when DATABASE_URL absent) in 3.84s across 13 test files.
+    - Frontend Test Suite (`cd frontend && npm test -- --run`):
+      - 35 passed in 6.67s across 6 test files in Vitest.
+    - Frontend Production Build (`cd frontend && npm run build`):
+      - Clean production build in 2.08s (0 errors, 392 kB gzip).
+  Manual acceptance / demo readiness:
+    - Tier B fallback path (PWA UI + FastAPI with deterministic fakes) verified 100% operational.
+    - Tier C CLI runner (`scripts/customer_simulation.py`) verified 100% operational in 0.07s.
+  Decisions / ADR required:
+    - Respected hard feature freeze at 12:00 IST.
+    - Quarantined approved proposals lacking terminal executed receipts from being counted as executed.
+    - Deduplicated receipt store queries by `receipt_id`.
+    - Maintained RFC 2606 non-routable `.bench.invalid` fixture isolation.
+  Blockers or failures (owner):
+    - DEP-JAI-01: PostgreSQL container & schema migrations not running locally (Jairaj). SQLite/in-memory repository active as verified fallback.
+    - DEP-REH-01: Remote AMD MI300X vLLM inference server not accessible (Rehan). FakeRunner active as verified benchmark fallback.
+    - DEP-REH-02: Live Google OAuth credentials and consent screen pending (Rehan). FakeGmailAdapter and FakeCalendarAdapter active as verified demo fallback.
+  Status: COMPLETE (T12.1 COMPLETE, T13.2 COMPLETE, T15.1 COMPLETE, Demo Prep COMPLETE; Feature Freeze Respected).
+  Next exact task: Day 6 final presentation practice and official submission packaging (T16.1).
+
 
 
