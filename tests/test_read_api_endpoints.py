@@ -17,6 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.api.app import app, state
+from backend.services.tasks import TaskRepositoryUnavailableError
 
 
 @pytest.fixture(autouse=True)
@@ -38,6 +39,25 @@ def test_get_activity_feed(client: TestClient):
     assert "events" in data
     assert data["count"] >= 2
     assert any(e["type"] == "proposed" for e in data["events"])
+
+
+def test_health_endpoints(client: TestClient):
+    assert client.get("/healthz").json() == {"status": "ok"}
+    assert client.get("/api/healthz").json() == {"status": "ok"}
+    assert client.get("/readyz").json() == {"status": "ready"}
+
+
+def test_readiness_returns_service_unavailable_when_repository_is_down(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def unavailable() -> bool:
+        raise TaskRepositoryUnavailableError("database is offline")
+
+    monkeypatch.setattr(state.task_repository, "health_check", unavailable)
+    response = client.get("/readyz")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Task repository is not ready"
 
 
 def test_get_receipt_success_and_404(client: TestClient):

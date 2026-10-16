@@ -9,18 +9,30 @@ Provides deterministic fake adapters for Gmail and Calendar writes, terminal rec
 minting, kill-switch gating, and audit logging.
 """
 
+import hashlib
+import hmac
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-import hashlib
-from typing import Any, Literal
+from functools import wraps
+from threading import RLock
+from typing import Any, Callable, Literal
 from uuid import uuid4
 
 from backend.contracts.read_api import (
     ActionReceiptResponse,
-    ReceiptStatus,
     ReceiptFactItem,
+    ReceiptStatus,
     ReceiptTimelineItem,
 )
+
+
+def _serialize_execution(method: Callable[..., Any]) -> Callable[..., Any]:
+    @wraps(method)
+    def wrapped(self: Any, *args: Any, **kwargs: Any) -> Any:
+        with self._execution_lock:
+            return method(self, *args, **kwargs)
+
+    return wrapped
 
 
 @dataclass
@@ -75,7 +87,8 @@ class FakeCalendarAdapter:
         if self.should_fail:
             raise ConnectionError(self.failure_error)
 
-        event_id = f"cal_evt_{hashlib.sha256((summary + start_time_iso + attendee_email).encode('utf-8')).hexdigest()[:16]}"
+        event_key = summary + start_time_iso + end_time_iso + attendee_email
+        event_id = f"cal_evt_{hashlib.sha256(event_key.encode('utf-8')).hexdigest()[:16]}"
         record = {
             "id": event_id,
             "summary": summary,
@@ -109,7 +122,9 @@ class WorkerExecutor:
         self.receipts = receipt_store if receipt_store is not None else {}
         self.activities = activity_store if activity_store is not None else []
         self.kill_switch_active: bool = False
+        self._execution_lock = RLock()
 
+    @_serialize_execution
     def execute_action(
         self,
         action_ref: str,
@@ -121,6 +136,9 @@ class WorkerExecutor:
         checks_passed: list[str] | None = None,
         facts_used: list[dict[str, str]] | None = None,
         is_founder_approved: bool = False,
+        email_subject: str | None = None,
+        calendar_end_time_iso: str | None = None,
+        calendar_description: str | None = None,
     ) -> ActionReceiptResponse:
         """
         Execute an approved or scheduled action.
@@ -131,6 +149,10 @@ class WorkerExecutor:
         timeline: list[ReceiptTimelineItem] = [
             ReceiptTimelineItem(timestamp=now, event="Worker received action for execution dispatch"),
         ]
+
+        prior_receipt = self.receipts.get(action_ref)
+        if prior_receipt is not None:
+            return prior_receipt
 
         # 1. Kill Switch Check
         # Autonomous action blocked by kill switch; explicitly approved action still executes unless blocked by guard
@@ -167,6 +189,29 @@ class WorkerExecutor:
             })
             return receipt
 
+        expected_hash = hashlib.sha256(rendered_body_or_time.encode("utf-8")).hexdigest()
+        if not hmac.compare_digest(rendered_hash, expected_hash):
+            timeline.append(ReceiptTimelineItem(
+                timestamp=now,
+                event="Execution blocked: rendered content does not match its SHA-256 hash.",
+            ))
+            receipt = ActionReceiptResponse(
+                receipt_id=receipt_id,
+                action_ref=action_ref,
+                action_kind=action_kind,
+                status=ReceiptStatus.BLOCKED,
+                authority_clause=authority_clause,
+                recipient_email=recipient_email,
+                rendered_hash=rendered_hash,
+                checks_passed=checks_passed or [],
+                facts_used=[ReceiptFactItem(**f) for f in (facts_used or [])],
+                cancelled_at=now,
+                timeline=timeline,
+            )
+            self.receipts[receipt_id] = receipt
+            self.receipts[action_ref] = receipt
+            return receipt
+
         # 2. Execute via adapter
         external_id = None
         try:
@@ -177,7 +222,7 @@ class WorkerExecutor:
                 ))
                 external_id = self.gmail.send_email(
                     to_email=recipient_email,
-                    subject=f"Follow-up {action_ref}",
+                    subject=email_subject or f"Follow-up {action_ref}",
                     body=rendered_body_or_time,
                     rendered_hash=rendered_hash,
                 )
@@ -190,11 +235,25 @@ class WorkerExecutor:
                     timestamp=now,
                     event="Creating meeting invite via Google Calendar adapter"
                 ))
+                if calendar_end_time_iso is None:
+                    raise ValueError("A calendar end time is required before creating a meeting")
+                start_time = datetime.fromisoformat(rendered_body_or_time)
+                end_time = datetime.fromisoformat(calendar_end_time_iso)
+                if (
+                    start_time.tzinfo is None
+                    or end_time.tzinfo is None
+                    or start_time.utcoffset() is None
+                    or end_time.utcoffset() is None
+                ):
+                    raise ValueError("Calendar start and end times must include timezone offsets")
+                if end_time <= start_time:
+                    raise ValueError("Calendar end time must be after its start time")
                 external_id = self.calendar.create_meeting(
-                    summary="Sales Alignment Discussion",
+                    summary=email_subject or "Sales Alignment Discussion",
                     start_time_iso=rendered_body_or_time,
-                    end_time_iso=rendered_body_or_time,
+                    end_time_iso=calendar_end_time_iso,
                     attendee_email=recipient_email,
+                    description=calendar_description,
                 )
                 timeline.append(ReceiptTimelineItem(
                     timestamp=now,

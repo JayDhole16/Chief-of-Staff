@@ -22,15 +22,15 @@ Also verifies negative paths:
 - Unauthorized legal liability objection (INB-003 -> G14/G02 BLOCK -> escalated).
 """
 
-from datetime import datetime, timezone
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.api.app import app, state
 from backend.contracts.read_api import ReceiptStatus
-from backend.services.executor import FakeGmailAdapter, FakeCalendarAdapter, WorkerExecutor
-from backend.services.inbound import InboundEmailMessage
 
 
 @pytest.fixture(autouse=True)
@@ -84,6 +84,13 @@ def test_golden_path_fake_adapters_full_flow(client: TestClient):
     assert "G08" in inbound_data["guards_triggered"]
     assert "G10" in inbound_data["guards_triggered"]
     assert inbound_data["task_id"] is not None
+    task = state.task_service.get_task(
+        workspace_id="demo",
+        task_id=inbound_data["task_id"],
+    )
+    assert task.source_message_id == msg_raju["message_id"]
+    assert task.deal_id == "D-1"
+    assert task.payload["risk_flags"] == ["G08", "G10"]
 
     # -----------------------------------------------------------------------
     # Step 4 & 5: Validated proposed action rendered with trusted facts
@@ -129,6 +136,14 @@ def test_golden_path_fake_adapters_full_flow(client: TestClient):
     )
     assert approve_res.status_code == 200
     assert approve_res.json()["status"] == "approved"
+    replay_res = client.post(
+        f"/api/approvals/{proposal['ref']}/decision",
+        json={
+            "decision": "approve",
+            "rendered_hash": proposal["rendered_hash"],
+        },
+    )
+    assert replay_res.status_code == 409
 
     # -----------------------------------------------------------------------
     # Step 8: Only authorized worker executor writes external Gmail send
@@ -267,7 +282,7 @@ def test_negative_path_worker_adapter_failure_handled(client: TestClient):
         action_kind="email",
         recipient_email="sunil@apexlogistics.in",
         rendered_body_or_time="Follow up",
-        rendered_hash="hash_fail_test",
+        rendered_hash=hashlib.sha256(b"Follow up").hexdigest(),
         authority_clause="Founder Explicit Approval",
         is_founder_approved=True,
     )
@@ -275,6 +290,121 @@ def test_negative_path_worker_adapter_failure_handled(client: TestClient):
     assert receipt.status == ReceiptStatus.BLOCKED
     assert any("Worker execution failed" in t.event for t in receipt.timeline)
     assert "Gmail API TLS handshake error" in receipt.timeline[-1].event
+    assert state.executor.execute_action(
+        action_ref="PA-FAIL-TEST",
+        action_kind="email",
+        recipient_email="sunil@apexlogistics.in",
+        rendered_body_or_time="Follow up",
+        rendered_hash=hashlib.sha256(b"Follow up").hexdigest(),
+        authority_clause="Founder Explicit Approval",
+        is_founder_approved=True,
+    ) is receipt
+    assert state.gmail_adapter.sent_messages == []
+
+
+def test_worker_rejects_changed_rendered_content(client: TestClient):
+    content = "Founder-approved content"
+    receipt = state.executor.execute_action(
+        action_ref="PA-TAMPER-TEST",
+        action_kind="email",
+        recipient_email="sunil@apexlogistics.in",
+        rendered_body_or_time=content + " changed",
+        rendered_hash=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        authority_clause="Founder Explicit Approval",
+        is_founder_approved=True,
+    )
+
+    assert receipt.status == ReceiptStatus.BLOCKED
+    assert state.gmail_adapter.sent_messages == []
+    assert "does not match its SHA-256 hash" in receipt.timeline[-1].event
+
+
+def test_worker_serializes_duplicate_action_dispatch(client: TestClient):
+    content = "One authorized message"
+    content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    def dispatch():
+        return state.executor.execute_action(
+            action_ref="PA-CONCURRENT-TEST",
+            action_kind="email",
+            recipient_email="sunil@apexlogistics.in",
+            rendered_body_or_time=content,
+            rendered_hash=content_hash,
+            authority_clause="Founder Explicit Approval",
+            is_founder_approved=True,
+        )
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        receipts = list(pool.map(lambda _: dispatch(), range(16)))
+
+    assert len({receipt.receipt_id for receipt in receipts}) == 1
+    assert len(state.gmail_adapter.sent_messages) == 1
+
+
+def test_worker_calendar_requires_real_interval(client: TestClient):
+    start = "2026-10-22T15:00:00+05:30"
+    end = "2026-10-22T15:30:00+05:30"
+    missing_end = state.executor.execute_action(
+        action_ref="PA-CALENDAR-MISSING-END",
+        action_kind="calendar",
+        recipient_email="sunil@apexlogistics.in",
+        rendered_body_or_time=start,
+        rendered_hash=hashlib.sha256(start.encode("utf-8")).hexdigest(),
+        authority_clause="Founder Explicit Approval",
+        is_founder_approved=True,
+    )
+    assert missing_end.status == ReceiptStatus.BLOCKED
+    assert state.calendar_adapter.created_events == []
+
+    zero_duration = state.executor.execute_action(
+        action_ref="PA-CALENDAR-ZERO-DURATION",
+        action_kind="calendar",
+        recipient_email="sunil@apexlogistics.in",
+        rendered_body_or_time=start,
+        rendered_hash=hashlib.sha256(start.encode("utf-8")).hexdigest(),
+        authority_clause="Founder Explicit Approval",
+        is_founder_approved=True,
+        calendar_end_time_iso=start,
+    )
+    assert zero_duration.status == ReceiptStatus.BLOCKED
+    assert state.calendar_adapter.created_events == []
+
+    valid = state.executor.execute_action(
+        action_ref="PA-CALENDAR-VALID",
+        action_kind="calendar",
+        recipient_email="sunil@apexlogistics.in",
+        rendered_body_or_time=start,
+        rendered_hash=hashlib.sha256(start.encode("utf-8")).hexdigest(),
+        authority_clause="Founder Explicit Approval",
+        is_founder_approved=True,
+        calendar_end_time_iso=end,
+    )
+    assert valid.status == ReceiptStatus.EXECUTED
+    assert state.calendar_adapter.created_events[0]["start"] == start
+    assert state.calendar_adapter.created_events[0]["end"] == end
+
+
+def test_approval_rejects_stored_content_hash_mismatch(client: TestClient):
+    proposal = state.proposals["PA-2026-10-15-001"]
+    proposal.rendered_body += " tampered"
+    response = client.post(
+        f"/api/approvals/{proposal.ref}/decision",
+        json={"decision": "approve", "rendered_hash": proposal.rendered_hash},
+    )
+    assert response.status_code == 409
+    assert state.gmail_adapter.sent_messages == []
+
+
+def test_approval_rejects_expired_proposal(client: TestClient):
+    proposal = state.proposals["PA-2026-10-15-001"]
+    proposal.expires_at = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+    response = client.post(
+        f"/api/approvals/{proposal.ref}/decision",
+        json={"decision": "approve", "rendered_hash": proposal.rendered_hash},
+    )
+    assert response.status_code == 409
+    assert "has expired" in response.json()["detail"]
+    assert state.gmail_adapter.sent_messages == []
 
 
 def test_negative_path_unauthorized_legal_clause_escalated(client: TestClient):
