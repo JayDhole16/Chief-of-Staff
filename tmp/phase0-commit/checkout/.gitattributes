@@ -1,6 +1,0 @@
-# Preserve exact bytes for source documents whose SHA-256 is recorded in Phase 0 metadata.
-/DEVELOPMENT_PLAN.md -text
-/docs/workbook/DEVELOPMENT_PLAN.md -text
-/t00.6-portable/knowledge/faq.md -text
-/t00.6-portable/knowledge/pricing.md -text
-/t00.6-portable/knowledge/services.md -text

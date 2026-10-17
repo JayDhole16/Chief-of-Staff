@@ -1,1 +1,0 @@
-# Domain types and schemas
