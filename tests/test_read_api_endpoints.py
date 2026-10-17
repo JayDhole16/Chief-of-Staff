@@ -19,10 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.api.app import app, state
-<<<<<<< HEAD
 from backend.contracts.read_api import ActivityEventItem, ActivityType
-=======
->>>>>>> 7fac91b5d6eca0b999cbddaba8c49e1d87bbe5ec
 from backend.services.tasks import TaskRepositoryUnavailableError
 
 
@@ -53,7 +50,6 @@ def test_health_endpoints(client: TestClient):
     assert client.get("/readyz").json() == {"status": "ready"}
 
 
-<<<<<<< HEAD
 def test_operations_status_reports_placeholder_integrations(client: TestClient):
     response = client.get("/api/v1/ops/status")
 
@@ -147,8 +143,6 @@ def test_brief_reports_omitted_events_without_references(client: TestClient):
     )
 
 
-=======
->>>>>>> 7fac91b5d6eca0b999cbddaba8c49e1d87bbe5ec
 def test_readiness_returns_service_unavailable_when_repository_is_down(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
