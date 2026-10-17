@@ -1,0 +1,24 @@
+[importlinter]
+root_packages =
+    backend
+
+[importlinter:contract:api-over-services]
+type = layers
+name = backend.api may import backend.services; services may not import api
+layers =
+    backend.api
+    backend.services
+
+[importlinter:contract:authority-core-purity]
+type = forbidden
+name = policy, guards and facts import nothing outward
+source_modules =
+    backend.policy
+    backend.guards
+    backend.facts
+forbidden_modules =
+    backend.api
+    backend.services
+    backend.db
+    backend.worker
+    backend.main
