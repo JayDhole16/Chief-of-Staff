@@ -177,7 +177,7 @@ export interface BriefLink {
   href: string
 }
 
-export interface BriefItem {
+export interface V1BriefItem {
   event_id: string
   timestamp: string
   title: string
@@ -185,9 +185,9 @@ export interface BriefItem {
   link: BriefLink
 }
 
-export interface DailyBrief {
+export interface V1DailyBrief {
   generated_at: string
-  items: BriefItem[]
+  items: V1BriefItem[]
   omitted_unlinked_events: number
   limitation: string
 }
