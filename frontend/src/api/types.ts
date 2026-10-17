@@ -191,6 +191,8 @@ export interface V1DailyBrief {
   omitted_unlinked_events: number
   limitation: string
 }
+export type DailyBrief = V1DailyBrief
+
 
 // Pipeline (T09.5)
 export interface Deal {

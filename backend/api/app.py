@@ -546,7 +546,7 @@ def create_app() -> FastAPI:
                 rendered_hash=proposal.rendered_hash,
                 authority_clause="Founder Explicit Approval",
                 checks_passed=["G01", "G04", "G05", "G06", "G07", "G09", "G10", "G11"],
-                facts_used=[f.model_dump() for f in proposal.facts_used],
+                facts_used=[(f.model_dump() if hasattr(f, "model_dump") else f.dict()) for f in proposal.facts_used],
                 is_founder_approved=True,
             )
             if receipt.status == ReceiptStatus.BLOCKED:
@@ -930,7 +930,7 @@ def create_app() -> FastAPI:
 
         deals_response = get_deals()
         brief_service = FounderBriefService(workspace_id="WS-DEMO")
-        proposals_list = [p.model_dump() for p in state.proposals.values()]
+        proposals_list = [(p.model_dump() if hasattr(p, "model_dump") else p.dict()) for p in state.proposals.values()]
         receipts_list = list(state.receipts.values())
 
         try:
