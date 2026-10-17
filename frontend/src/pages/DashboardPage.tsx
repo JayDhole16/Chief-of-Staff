@@ -137,13 +137,15 @@ export function DashboardPage({ session, onLogout }: DashboardPageProps): JSX.El
 
   // Undo Countdown timer
   useEffect(() => {
-    let timer: NodeJS.Timeout
+    let timer: ReturnType<typeof setTimeout> | undefined
     if (rajuState === 'undoing' && undoCountdown > 0) {
       timer = setTimeout(() => setUndoCountdown((prev) => prev - 1), 1000)
     } else if (rajuState === 'undoing' && undoCountdown === 0) {
       setRajuState('dispatched')
     }
-    return () => clearTimeout(timer)
+    return () => {
+      if (timer) clearTimeout(timer)
+    }
   }, [rajuState, undoCountdown])
 
   // Fetch Ops status when viewing operations
@@ -151,19 +153,16 @@ export function DashboardPage({ session, onLogout }: DashboardPageProps): JSX.El
     if (view === 'operations') {
       setOpsLoading(true)
       Promise.allSettled([
-        apiCall<OperationsStatus>('/api/v1/ops/status'),
-        apiCall<DailyBrief>('/api/brief'),
-        apiCall<{ items: V1BriefItem[] }>('/api/v1/brief'),
+        apiCall<OperationsStatus>('/v1/ops/status'),
+        apiCall<DailyBrief>('/v1/brief'),
       ])
-        .then(([statusRes, briefRes, v1Res]) => {
-          if (statusRes.status === 'fulfilled' && statusRes.value.data) {
-            setOpsStatus(statusRes.value.data)
+        .then(([statusRes, briefRes]) => {
+          if (statusRes.status === 'fulfilled' && statusRes.value) {
+            setOpsStatus(statusRes.value)
           }
-          if (briefRes.status === 'fulfilled' && briefRes.value.data) {
-            setDailyBrief(briefRes.value.data)
-          }
-          if (v1Res.status === 'fulfilled' && v1Res.value.data?.items) {
-            setV1Brief(v1Res.value.data.items)
+          if (briefRes.status === 'fulfilled' && briefRes.value) {
+            setDailyBrief(briefRes.value)
+            setV1Brief(briefRes.value.items)
           }
         })
         .finally(() => setOpsLoading(false))

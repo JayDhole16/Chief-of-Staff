@@ -169,6 +169,9 @@ export interface OperationsStatus {
   data_mode: 'provisional'
   kill_switch_active: boolean
   components: Record<string, OperationsComponent>
+  database?: {
+    type?: string
+  }
 }
 
 export interface BriefLink {
