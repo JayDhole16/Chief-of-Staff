@@ -19,7 +19,7 @@ import type {
   CancelActionResponse,
   SystemSettings,
   OperationsStatus,
-  DailyBrief,
+  V1DailyBrief,
 } from '../api/types'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
@@ -502,7 +502,7 @@ export const handlers = [
 
   // GET /v1/brief (T13.2)
   http.get(`${API_BASE}/v1/brief`, () => {
-    const response: DailyBrief = {
+    const response: V1DailyBrief = {
       generated_at: new Date().toISOString(),
       items: [
         {
