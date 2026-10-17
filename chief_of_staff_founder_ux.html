@@ -1,1108 +1,850 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Chief of Staff — Executive Concierge for Founders</title>
-  <!-- Google Fonts: Playfair Display (off-white editorial serif) & Plus Jakarta Sans (clean UI sans) -->
+  <title>Chief of Staff — Your AI Executive Assistant</title>
+  
+  <!-- Modern Typography: Plus Jakarta Sans & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
-  <!-- SheetJS for real Excel (.xlsx/.xls) & CSV parsing and export -->
+  <!-- SheetJS for live Excel (.xlsx/.xls) & CSV parsing -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
   <style>
-    :root,
-    html[data-theme="dark"] {
-      --bg-canvas: #0B0D12;
-      --bg-surface: #12161F;
-      --bg-elevated: #181D29;
-      --bg-glass: rgba(18, 22, 31, 0.90);
-      --bg-input: #0F131B;
-      --text-primary: #F4F0E6;
-      --text-secondary: #C5BFB3;
-      --text-muted: #878278;
-      --accent-primary: #E2BE6B;
-      --accent-primary-hover: #EDD085;
-      --accent-contrast: #0B0D12;
-      --accent-soft: rgba(226, 190, 107, 0.13);
-      --border-hairline: rgba(244, 240, 230, 0.09);
-      --border-strong: rgba(244, 240, 230, 0.18);
-      --status-emerald: #34D399;
-      --status-emerald-bg: rgba(52, 211, 153, 0.12);
-      --status-amber: #FBBF24;
-      --status-amber-bg: rgba(251, 191, 36, 0.13);
-      --status-rose: #FB7185;
-      --status-rose-bg: rgba(251, 113, 133, 0.13);
-      --shadow-soft: 0 20px 45px -15px rgba(0, 0, 0, 0.65);
-    }
-
-    html[data-theme="light"] {
-      --bg-canvas: #F7F4EC;
-      --bg-surface: #FFFFFF;
-      --bg-elevated: #F0ECE1;
-      --bg-glass: rgba(255, 255, 255, 0.92);
-      --bg-input: #FAF8F3;
-      --text-primary: #141720;
-      --text-secondary: #454A57;
-      --text-muted: #767A85;
-      --accent-primary: #8C6618;
-      --accent-primary-hover: #705010;
-      --accent-contrast: #FAF8F3;
-      --accent-soft: rgba(140, 102, 24, 0.10);
-      --border-hairline: rgba(20, 23, 32, 0.09);
-      --border-strong: rgba(20, 23, 32, 0.18);
-      --status-emerald: #059669;
-      --status-emerald-bg: rgba(5, 150, 105, 0.10);
-      --status-amber: #B45309;
-      --status-amber-bg: rgba(180, 83, 9, 0.10);
-      --status-rose: #E11D48;
-      --status-rose-bg: rgba(225, 29, 72, 0.10);
-      --shadow-soft: 0 16px 36px -12px rgba(20, 23, 32, 0.08);
-    }
-
-    * {
-      box-sizing: border-box;
+    :root {
+      --bg-void: #07090C;
+      --bg-rail: #050709;
+      --bg-sidebar: #0A0D12;
+      --bg-console: #080B0F;
+      --bg-surface: #10141C;
+      --bg-elevated: #151A24;
+      --bg-user-bubble: #082919;
+      --bg-ai-bubble: #0E131B;
+      
+      --border-hairline: rgba(255, 255, 255, 0.07);
+      --border-subtle: rgba(255, 255, 255, 0.12);
+      --border-emerald: rgba(0, 255, 135, 0.25);
+      
+      --emerald-glow: #00FF87;
+      --emerald-primary: #10B981;
+      --emerald-deep: #059669;
+      --emerald-tint: rgba(0, 255, 135, 0.12);
+      
+      --text-main: #F1F5F9;
+      --text-muted: #94A3B8;
+      --text-dim: #64748B;
     }
 
     body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-void);
+      color: var(--text-main);
+      overflow: hidden;
       margin: 0;
       padding: 0;
-      background-color: var(--bg-canvas);
-      color: var(--text-primary);
-      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-      -webkit-font-smoothing: antialiased;
-      transition: background-color 0.28s ease, color 0.28s ease;
-      overflow-x: hidden;
+      height: 100vh;
+      width: 100vw;
     }
 
-    .font-playfair {
-      font-family: 'Playfair Display', Georgia, Cambria, serif;
-      letter-spacing: -0.01em;
-    }
-
-    .surface-card {
-      background-color: var(--bg-surface);
-      border: 1px solid var(--border-hairline);
-      box-shadow: var(--shadow-soft);
-      transition: background-color 0.25s ease, border-color 0.25s ease, transform 0.2s ease;
-    }
-
-    .surface-elevated {
-      background-color: var(--bg-elevated);
-      border: 1px solid var(--border-hairline);
-      transition: background-color 0.25s ease, border-color 0.25s ease;
-    }
-
-    .surface-input {
-      background-color: var(--bg-input);
-      border: 1px solid var(--border-strong);
-      color: var(--text-primary);
-      transition: border-color 0.2s ease, background-color 0.2s ease;
-    }
-
-    .surface-input:focus {
-      outline: none;
-      border-color: var(--accent-primary);
-    }
-
-    .btn-gold {
-      background-color: var(--accent-primary);
-      color: var(--accent-contrast);
-      font-weight: 600;
-      transition: all 0.2s ease;
-    }
-
-    .btn-gold:hover {
-      background-color: var(--accent-primary-hover);
-      transform: translateY(-1px);
-    }
-
-    .btn-ghost {
-      background-color: transparent;
-      border: 1px solid var(--border-strong);
-      color: var(--text-primary);
-      transition: all 0.2s ease;
-    }
-
-    .btn-ghost:hover {
-      background-color: var(--bg-elevated);
-      border-color: var(--accent-primary);
-    }
-
-    .nav-pill {
-      color: var(--text-secondary);
-      transition: all 0.2s ease;
-      border: 1px solid transparent;
-      white-space: nowrap;
-    }
-
-    .nav-pill:hover {
-      color: var(--text-primary);
-      background-color: var(--bg-elevated);
-    }
-
-    .nav-pill.active {
-      background-color: var(--accent-soft);
-      color: var(--accent-primary);
-      border-color: var(--accent-primary);
-      font-weight: 600;
-    }
-
-    .badge-emerald {
-      background-color: var(--status-emerald-bg);
-      color: var(--status-emerald);
-    }
-
-    .badge-amber {
-      background-color: var(--status-amber-bg);
-      color: var(--status-amber);
-    }
-
-    .badge-rose {
-      background-color: var(--status-rose-bg);
-      color: var(--status-rose);
-    }
-
-    .badge-gold {
-      background-color: var(--accent-soft);
-      color: var(--accent-primary);
-    }
-
+    /* Scrollbar */
     ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
+      width: 5px;
+      height: 5px;
     }
     ::-webkit-scrollbar-track {
       background: transparent;
     }
     ::-webkit-scrollbar-thumb {
-      background: var(--border-strong);
+      background: rgba(255, 255, 255, 0.12);
       border-radius: 9999px;
     }
-
-    @keyframes pulseSlow {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.45; transform: scale(0.92); }
-    }
-    .pulse-dot {
-      animation: pulseSlow 2.6s infinite ease-in-out;
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 255, 135, 0.35);
     }
 
-    @keyframes fadeInSlide {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: translateY(0); }
+    /* Glows & Neon Accents */
+    .glow-emerald {
+      box-shadow: 0 0 24px -4px rgba(0, 255, 135, 0.35);
     }
-    .animate-fade-in {
-      animation: fadeInSlide 0.26s ease-out forwards;
+    .glow-emerald-sm {
+      box-shadow: 0 0 12px -2px rgba(0, 255, 135, 0.3);
+    }
+    .glow-text-emerald {
+      text-shadow: 0 0 16px rgba(0, 255, 135, 0.5);
+    }
+    
+    /* 4-Pointed Star Icon */
+    .four-pointed-star {
+      position: relative;
+      display: inline-block;
+      width: 1em;
+      height: 1em;
     }
 
-    input[type="range"] {
-      accent-color: var(--accent-primary);
+    /* Waveform Animation for Voice Recording */
+    @keyframes wavePulse {
+      0%, 100% { height: 6px; }
+      50% { height: 22px; }
+    }
+    .wave-bar {
+      width: 3px;
+      background-color: var(--emerald-glow);
+      border-radius: 9999px;
+      animation: wavePulse 1s infinite ease-in-out;
+    }
+    .wave-bar:nth-child(1) { animation-delay: 0.1s; }
+    .wave-bar:nth-child(2) { animation-delay: 0.25s; }
+    .wave-bar:nth-child(3) { animation-delay: 0.4s; }
+    .wave-bar:nth-child(4) { animation-delay: 0.2s; }
+    .wave-bar:nth-child(5) { animation-delay: 0.35s; }
+
+    /* Collapsible Sidebar Transitions */
+    #history-sidebar {
+      transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.22s ease, transform 0.28s ease;
+      will-change: width, opacity;
+    }
+    #history-sidebar.collapsed {
+      width: 0px !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      overflow: hidden !important;
+      border-right-width: 0px !important;
+    }
+
+    /* Animated Progress Bar */
+    @keyframes progressShimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .progress-emerald-shimmer {
+      background: linear-gradient(90deg, #10B981 0%, #00FF87 50%, #10B981 100%);
+      background-size: 200% 100%;
+      animation: progressShimmer 2.2s infinite linear;
+    }
+
+    /* Micro-interactions */
+    .interactive-card {
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .interactive-card:hover {
+      border-color: var(--border-emerald);
+      transform: translateY(-1px);
     }
   </style>
 </head>
-<body class="min-h-screen flex flex-col selection:bg-amber-500/20">
 
-  <!-- TOP NAVIGATION BAR (Responsive two-row wrap on narrow screens so elements never collide/merge) -->
-  <header class="sticky top-0 z-30 backdrop-blur-md border-b" style="background-color: var(--bg-glass); border-color: var(--border-hairline);">
-    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
-      
-      <!-- Left: Brand Identity & Quiet Status -->
-      <div class="flex items-center gap-3 min-w-0">
-        <button type="button" onclick="switchView('chat')" class="flex items-center gap-2.5 text-left group focus:outline-none">
-          <div class="w-9 h-9 rounded-xl flex items-center justify-center font-playfair font-bold text-base shrink-0" style="background-color: var(--accent-soft); color: var(--accent-primary); border: 1px solid var(--accent-primary);">
-            N
-          </div>
-          <div class="min-w-0">
-            <div class="font-playfair text-base sm:text-lg font-semibold tracking-tight leading-tight truncate" id="header-business-name">
-              Nair Automation Studio
-            </div>
-            <div class="flex items-center gap-1.5 text-xs" style="color: var(--text-muted);">
-              <span id="autonomy-status-dot" class="w-2 h-2 rounded-full pulse-dot shrink-0" style="background-color: var(--status-emerald);"></span>
-              <span id="autonomy-status-label" class="truncate">Chief of Staff working quietly</span>
-            </div>
-          </div>
-        </button>
-      </div>
+<body class="flex h-screen w-screen overflow-hidden select-none">
 
-      <!-- Center: Core 3-Pillar Navigation (Chat, Dashboard, Settings) -->
-      <nav aria-label="Main navigation" class="order-3 sm:order-2 w-full sm:w-auto flex items-center justify-center gap-1 p-1 rounded-full surface-elevated">
-        <button type="button" id="nav-chat" onclick="switchView('chat')" class="nav-pill active flex-1 sm:flex-initial justify-center px-3.5 py-1.5 rounded-full text-xs sm:text-sm flex items-center gap-1.5">
-          <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
-          <span>Chat</span>
-          <span id="nav-decision-badge" class="ml-0.5 px-1.5 py-0.2 rounded-full text-[11px] font-semibold badge-amber">1</span>
+  <!-- ============================================================== -->
+  <!-- 1. PRIMARY ICON NAVIGATION RAIL (Always visible, 64px width)     -->
+  <!-- ============================================================== -->
+  <aside class="w-16 shrink-0 flex flex-col items-center justify-between py-4 border-r border-[var(--border-hairline)] bg-[var(--bg-rail)] z-40">
+    <!-- Top: Glowing Logo Icon -->
+    <div class="flex flex-col items-center gap-6">
+      <button onclick="switchMainTab('chat')" title="Chief of Staff" class="group relative w-11 h-11 rounded-2xl flex items-center justify-center bg-[#091510] border border-[var(--emerald-primary)]/40 hover:border-[var(--emerald-glow)] transition-all glow-emerald-sm">
+        <svg class="w-6 h-6 text-[var(--emerald-glow)] transform group-hover:rotate-12 transition-transform" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 0L14.6 9.4L24 12L14.6 14.6L12 24L9.4 14.6L0 12L9.4 9.4L12 0Z"/>
+        </svg>
+        <span class="absolute left-16 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#111720] border border-[var(--border-subtle)] text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+          Chief of Staff
+        </span>
+      </button>
+
+      <!-- Navigation Pillars -->
+      <nav class="flex flex-col items-center gap-2">
+        <!-- Chats Tab -->
+        <button id="rail-tab-chat" onclick="switchMainTab('chat')" title="Chats" class="rail-btn active relative w-11 h-11 rounded-xl flex items-center justify-center text-[var(--emerald-glow)] bg-[#0C1A14] border border-[var(--emerald-primary)]/30 hover:bg-[#10241B] transition-all group">
+          <i data-lucide="message-square" class="w-5 h-5"></i>
+          <span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[var(--emerald-glow)] ring-2 ring-[var(--bg-rail)]"></span>
+          <span class="absolute left-16 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#111720] border border-[var(--border-subtle)] text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+            Chats (Active)
+          </span>
         </button>
-        <button type="button" id="nav-dashboard" onclick="switchView('dashboard')" class="nav-pill flex-1 sm:flex-initial justify-center px-3.5 py-1.5 rounded-full text-xs sm:text-sm flex items-center gap-1.5">
-          <i data-lucide="compass" class="w-3.5 h-3.5"></i>
-          <span>Dashboard</span>
+
+        <!-- Deals / Pipeline Tab -->
+        <button id="rail-tab-deals" onclick="switchMainTab('deals')" title="Deals & Revenue" class="rail-btn relative w-11 h-11 rounded-xl flex items-center justify-center text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-elevated)] transition-all group">
+          <i data-lucide="briefcase" class="w-5 h-5"></i>
+          <span id="deals-count-badge" class="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-[#0D261B] text-[var(--emerald-glow)] border border-[var(--emerald-primary)]/40">6</span>
+          <span class="absolute left-16 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#111720] border border-[var(--border-subtle)] text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+            Deals Pipeline (₹1.45 Cr)
+          </span>
         </button>
-        <button type="button" id="nav-settings" onclick="switchView('settings')" class="nav-pill flex-1 sm:flex-initial justify-center px-3.5 py-1.5 rounded-full text-xs sm:text-sm flex items-center gap-1.5">
-          <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i>
-          <span>Settings</span>
+
+        <!-- Tasks / Approvals Tab -->
+        <button id="rail-tab-tasks" onclick="switchMainTab('tasks')" title="Decisions & Tasks" class="rail-btn relative w-11 h-11 rounded-xl flex items-center justify-center text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-elevated)] transition-all group">
+          <i data-lucide="check-square" class="w-5 h-5"></i>
+          <span class="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40">1</span>
+          <span class="absolute left-16 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#111720] border border-[var(--border-subtle)] text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+            Pending Decisions (1 Action)
+          </span>
+        </button>
+
+        <!-- Activity Feed Tab -->
+        <button id="rail-tab-activity" onclick="switchMainTab('activity')" title="Audit Activity" class="rail-btn relative w-11 h-11 rounded-xl flex items-center justify-center text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-elevated)] transition-all group">
+          <i data-lucide="activity" class="w-5 h-5"></i>
+          <span class="absolute left-16 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#111720] border border-[var(--border-subtle)] text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+            Audit Activity & Daily Brief
+          </span>
+        </button>
+
+        <!-- Settings Tab -->
+        <button id="rail-tab-settings" onclick="switchMainTab('settings')" title="Settings & Guardrails" class="rail-btn relative w-11 h-11 rounded-xl flex items-center justify-center text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-elevated)] transition-all group">
+          <i data-lucide="sliders-horizontal" class="w-5 h-5"></i>
+          <span class="absolute left-16 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#111720] border border-[var(--border-subtle)] text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+            Settings & Autonomy Limits
+          </span>
         </button>
       </nav>
+    </div>
 
-      <!-- Right: Sync Data Button, Light/Dark Switch, & Founder Profile Button -->
-      <div class="order-2 sm:order-3 flex items-center gap-2 shrink-0">
-        <button type="button" id="header-upload-btn" onclick="openUploadModal()" class="btn-ghost px-3 py-1.5 rounded-full text-xs font-medium hidden md:flex items-center gap-1.5" title="Upload Excel, CSV, or JSON to merge into your database">
-          <i data-lucide="upload-cloud" class="w-3.5 h-3.5" style="color: var(--accent-primary);"></i>
-          <span>Sync Data</span>
-        </button>
+    <!-- Bottom: Founder User Profile Avatar -->
+    <div class="flex flex-col items-center gap-3">
+      <button onclick="switchMainTab('settings')" title="Ayush (Founder)" class="relative w-10 h-10 rounded-full bg-[#18212D] border border-[var(--border-subtle)] flex items-center justify-center text-sm font-bold text-white hover:border-[var(--emerald-glow)] transition-all group">
+        <span>A</span>
+        <span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-[var(--emerald-glow)] ring-2 ring-[var(--bg-rail)]"></span>
+        <span class="absolute left-16 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#111720] border border-[var(--border-subtle)] text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+          Ayush · Founder Account
+        </span>
+      </button>
+    </div>
+  </aside>
 
-        <!-- Light / Dark Mode Switch -->
-        <button type="button" id="theme-toggle-btn" onclick="toggleTheme()" class="btn-ghost w-9 h-9 rounded-full flex items-center justify-center shrink-0" title="Switch between Slate-Black and Light Mode" aria-label="Toggle Light or Dark Theme">
-          <i data-lucide="sun" id="theme-icon-sun" class="w-4 h-4 hidden"></i>
-          <i data-lucide="moon" id="theme-icon-moon" class="w-4 h-4"></i>
-        </button>
+  <!-- ============================================================== -->
+  <!-- 2. COLLAPSIBLE CHAT HISTORY SIDEBAR (ChatGPT Style)            -->
+  <!-- ============================================================== -->
+  <aside id="history-sidebar" class="w-[280px] shrink-0 flex flex-col h-full bg-[var(--bg-sidebar)] border-r border-[var(--border-hairline)] z-30">
+    <!-- Sidebar Header: New Chat & Collapse Button -->
+    <div class="p-3.5 flex items-center gap-2 border-b border-[var(--border-hairline)]">
+      <button onclick="startNewChatSession()" class="flex-1 flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl bg-[#0F2218] border border-[var(--emerald-primary)]/40 hover:border-[var(--emerald-glow)] text-[var(--emerald-glow)] font-semibold text-xs tracking-wide transition-all glow-emerald-sm">
+        <i data-lucide="plus" class="w-4 h-4"></i>
+        <span>New Chat</span>
+        <kbd class="ml-auto text-[10px] text-[var(--emerald-primary)]/70 px-1 py-0.2 rounded bg-black/40 font-mono">⌘N</kbd>
+      </button>
+      
+      <!-- Collapse Button -->
+      <button onclick="toggleHistorySidebar()" title="Collapse sidebar (Ctrl+[)" class="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-elevated)] transition-all">
+        <i data-lucide="panel-left-close" class="w-4 h-4"></i>
+      </button>
+    </div>
 
-        <!-- Profile Pill (Opens Profile & Settings) -->
-        <button type="button" id="nav-profile" onclick="switchView('profile')" class="nav-pill pl-1.5 pr-3 py-1 rounded-full flex items-center gap-2 border shrink-0" style="border-color: var(--border-strong);" title="Founder Profile & App Settings">
-          <span id="header-avatar-initials" class="w-7 h-7 rounded-full flex items-center justify-center font-playfair text-xs font-bold" style="background-color: var(--accent-primary); color: var(--accent-contrast);">
-            MN
-          </span>
-          <span id="header-founder-name" class="text-xs font-medium">Meera</span>
-        </button>
+    <!-- Search Sessions Input -->
+    <div class="px-3.5 py-2.5">
+      <div class="relative flex items-center">
+        <i data-lucide="search" class="absolute left-3 w-3.5 h-3.5 text-[var(--text-dim)]"></i>
+        <input 
+          type="text" 
+          id="history-search" 
+          oninput="filterChatHistory(this.value)"
+          placeholder="Search chats..." 
+          class="w-full bg-[#070A0E] border border-[var(--border-hairline)] focus:border-[var(--emerald-primary)] rounded-lg pl-8 pr-7 py-1.5 text-xs text-[var(--text-main)] placeholder-[var(--text-dim)] focus:outline-none transition-colors"
+        />
+        <span class="absolute right-2.5 text-[10px] text-[var(--text-dim)] font-mono border border-[var(--border-hairline)] px-1 py-0.2 rounded">/</span>
       </div>
     </div>
-  </header>
 
-  <!-- MAIN WORKSPACE CONTAINER -->
-  <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">
+    <!-- Thread Groups (Today, Yesterday, Previous 7 Days) -->
+    <div id="history-sessions-list" class="flex-1 overflow-y-auto px-2 space-y-4 py-2">
+      <!-- Group: Today -->
+      <div>
+        <div class="px-2.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-dim)] mb-1">Today</div>
+        <div class="space-y-0.5">
+          <!-- Active Thread -->
+          <div onclick="selectChatSession('session-1')" class="session-item active group flex items-center justify-between px-2.5 py-2 rounded-lg bg-[#0C1B14] border border-[var(--emerald-primary)]/40 text-[var(--text-main)] cursor-pointer transition-all">
+            <div class="flex items-center gap-2 min-w-0">
+              <i data-lucide="message-square" class="w-3.5 h-3.5 text-[var(--emerald-glow)] shrink-0"></i>
+              <span class="text-xs font-medium truncate text-white">Raju Malhotra 5% Counter-Offer</span>
+            </div>
+            <div class="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[var(--text-dim)] hover:text-white">
+              <i data-lucide="more-horizontal" class="w-3.5 h-3.5"></i>
+            </div>
+          </div>
 
-    <!-- ==========================================
-         VIEW 1: CORE CONCIERGE CHAT PAGE (DEFAULT)
-         ========================================== -->
-    <section id="view-chat" class="animate-fade-in max-w-3xl mx-auto flex flex-col gap-6">
+          <!-- Second Thread -->
+          <div onclick="selectChatSession('session-2')" class="session-item group flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-white cursor-pointer transition-all">
+            <div class="flex items-center gap-2 min-w-0">
+              <i data-lucide="message-square" class="w-3.5 h-3.5 shrink-0"></i>
+              <span class="text-xs truncate">Q4 Target & Sweep Execution</span>
+            </div>
+            <div class="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[var(--text-dim)] hover:text-white">
+              <i data-lucide="trash-2" class="w-3 h-3 hover:text-rose-400"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Group: Yesterday -->
+      <div>
+        <div class="px-2.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-dim)] mb-1">Yesterday</div>
+        <div class="space-y-0.5">
+          <div onclick="selectChatSession('session-3')" class="session-item group flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-white cursor-pointer transition-all">
+            <div class="flex items-center gap-2 min-w-0">
+              <i data-lucide="message-square" class="w-3.5 h-3.5 shrink-0"></i>
+              <span class="text-xs truncate">Brightleaf Clinics OOO Follow-up</span>
+            </div>
+            <div class="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[var(--text-dim)] hover:text-white">
+              <i data-lucide="trash-2" class="w-3 h-3 hover:text-rose-400"></i>
+            </div>
+          </div>
+
+          <div onclick="selectChatSession('session-4')" class="session-item group flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-white cursor-pointer transition-all">
+            <div class="flex items-center gap-2 min-w-0">
+              <i data-lucide="message-square" class="w-3.5 h-3.5 shrink-0"></i>
+              <span class="text-xs truncate">Iyer Textiles ERP Inquiry</span>
+            </div>
+            <div class="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[var(--text-dim)] hover:text-white">
+              <i data-lucide="trash-2" class="w-3 h-3 hover:text-rose-400"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Group: Previous 7 Days -->
+      <div>
+        <div class="px-2.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-dim)] mb-1">Previous 7 Days</div>
+        <div class="space-y-0.5">
+          <div onclick="selectChatSession('session-5')" class="session-item group flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-white cursor-pointer transition-all">
+            <div class="flex items-center gap-2 min-w-0">
+              <i data-lucide="message-square" class="w-3.5 h-3.5 shrink-0"></i>
+              <span class="text-xs truncate">Inbound Email Pipeline Audit</span>
+            </div>
+          </div>
+
+          <div onclick="selectChatSession('session-6')" class="session-item group flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-white cursor-pointer transition-all">
+            <div class="flex items-center gap-2 min-w-0">
+              <i data-lucide="message-square" class="w-3.5 h-3.5 shrink-0"></i>
+              <span class="text-xs truncate">Deterministic Guard Benchmark G01-G15</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom: Autonomy Status Indicator -->
+    <div class="p-3 border-t border-[var(--border-hairline)] flex items-center justify-between text-xs bg-[#07090D]">
+      <div class="flex items-center gap-2">
+        <span id="sidebar-autonomy-dot" class="w-2 h-2 rounded-full bg-[var(--emerald-glow)] animate-pulse"></span>
+        <span id="sidebar-autonomy-text" class="text-[11px] text-[var(--text-muted)] font-medium">Auto-pilot active</span>
+      </div>
+      <button onclick="toggleKillSwitch()" id="sidebar-kill-btn" class="px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition-colors">
+        Kill Switch
+      </button>
+    </div>
+  </aside>
+
+  <!-- ============================================================== -->
+  <!-- 3. CENTRAL MAIN CHAT & WORKSPACE CONSOLE                        -->
+  <!-- ============================================================== -->
+  <main class="flex-1 flex flex-col h-full bg-[var(--bg-console)] relative overflow-hidden z-20">
+
+    <!-- ------------------------------------------------------------ -->
+    <!-- TAB VIEW 1: CHAT CONSOLE (Primary View Matching Screenshot)    -->
+    <!-- ------------------------------------------------------------ -->
+    <section id="view-chat" class="flex-1 flex flex-col h-full overflow-hidden">
       
-      <!-- Serene Editorial Greeting & Audio Standup -->
-      <div class="flex flex-col gap-3 pt-1">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <span class="text-xs uppercase tracking-widest font-semibold" style="color: var(--accent-primary);">
-            Saturday Evening Briefing · Oct 17
-          </span>
-          <div class="flex items-center gap-2">
-            <button type="button" id="listen-brief-btn" onclick="toggleAudioBrief()" class="btn-ghost px-3 py-1 rounded-full text-xs flex items-center gap-1.5">
-              <i data-lucide="volume-2" class="w-3.5 h-3.5" style="color: var(--accent-primary);"></i>
-              <span id="listen-brief-label">Listen to 20s Brief</span>
-            </button>
-            <button type="button" onclick="openUploadModal()" class="btn-ghost px-3 py-1 rounded-full text-xs flex md:hidden items-center gap-1.5">
-              <i data-lucide="upload-cloud" class="w-3.5 h-3.5" style="color: var(--accent-primary);"></i>
-              <span>Upload Data</span>
-            </button>
+      <!-- Top Chat Header (Customized per User Request) -->
+      <!-- REMOVED: Online status text, REMOVED: Call & Video call buttons -->
+      <header class="h-14 px-4 sm:px-6 flex items-center justify-between border-b border-[var(--border-hairline)] bg-[var(--bg-surface)] shrink-0 z-10">
+        <div class="flex items-center gap-3">
+          <!-- Sidebar Toggle (Always accessible to collapse/open) -->
+          <button id="sidebar-toggle-btn" onclick="toggleHistorySidebar()" title="Toggle sidebar (Ctrl+[)" class="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-elevated)] transition-colors">
+            <i id="sidebar-toggle-icon" data-lucide="panel-left-close" class="w-4 h-4"></i>
+          </button>
+
+          <!-- 4-Pointed Star Avatar -->
+          <div class="relative w-8 h-8 rounded-full bg-[#081C13] border border-[var(--emerald-primary)]/50 flex items-center justify-center shrink-0 glow-emerald-sm">
+            <svg class="w-4 h-4 text-[var(--emerald-glow)]" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0L14.6 9.4L24 12L14.6 14.6L12 24L9.4 14.6L0 12L9.4 9.4L12 0Z"/>
+            </svg>
+          </div>
+
+          <!-- Title with Verified Green Checkmark Only (No status thing) -->
+          <div class="flex items-center gap-1.5">
+            <h1 class="text-sm sm:text-base font-bold text-white tracking-tight">Chief of Staff</h1>
+            <svg class="w-4 h-4 text-[var(--emerald-glow)] shrink-0" viewBox="0 0 24 24" fill="currentColor">
+              <path fill-rule="evenodd" d="M8.603 3.799A4.49 4.49 0 0112 2.25c1.357 0 2.573.6 3.397 1.549a4.49 4.49 0 013.498 1.307 4.491 4.491 0 011.307 3.497A4.49 4.49 0 0121.75 12a4.49 4.49 0 01-1.549 3.397 4.491 4.491 0 01-1.307 3.497 4.491 4.491 0 01-3.497 1.307A4.49 4.49 0 0112 21.75a4.49 4.49 0 01-3.397-1.549 4.49 4.49 0 01-3.498-1.306 4.491 4.491 0 01-1.307-3.498A4.49 4.49 0 012.25 12c0-1.357.6-2.573 1.549-3.397a4.49 4.49 0 011.307-3.497 4.49 4.49 0 013.497-1.307zm7.007 6.387a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clip-rule="evenodd" />
+            </svg>
           </div>
         </div>
 
-        <h1 class="font-playfair text-2xl sm:text-4xl font-normal leading-snug" id="chat-hero-greeting">
-          Good evening, <span id="greeting-founder-name" class="italic">Meera</span>. Everything routine is handled—only one pricing question needs your call.
-        </h1>
+        <!-- Right Header Action Controls (Clean search, DB sync, & 3 dots) -->
+        <div class="flex items-center gap-2">
+          <!-- Excel / CSV Quick Import Trigger -->
+          <label class="cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#141C26] hover:bg-[#1A2533] border border-[var(--border-hairline)] text-xs text-[var(--text-muted)] hover:text-white transition-all">
+            <i data-lucide="upload" class="w-3.5 h-3.5 text-[var(--emerald-glow)]"></i>
+            <span class="hidden sm:inline">Sync Data (.xlsx/.csv)</span>
+            <input type="file" id="header-file-sync" class="hidden" accept=".xlsx,.xls,.csv,.json" onchange="handleFileUpload(event)" />
+          </label>
 
-        <!-- Quiet Background Summary Strip (Abstracted Work) -->
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
-          <button type="button" onclick="switchView('dashboard')" class="surface-card rounded-2xl p-3.5 text-left hover:border-amber-400/40 flex items-center justify-between gap-2">
-            <div class="min-w-0">
-              <div class="text-[11px] uppercase tracking-wider" style="color: var(--text-muted);">Quarterly Target</div>
-              <div class="font-playfair text-lg font-semibold mt-0.5 truncate" id="chat-strip-target">₹18.8L <span class="text-xs font-normal" style="color: var(--text-muted);">/ ₹35.0L</span></div>
-            </div>
-            <span class="badge-emerald text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0" id="chat-strip-pct">54%</span>
+          <!-- Search In Chat -->
+          <button onclick="focusChatInput()" title="Search in chat" class="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-elevated)] transition-colors">
+            <i data-lucide="search" class="w-4 h-4"></i>
           </button>
 
-          <button type="button" onclick="switchView('dashboard')" class="surface-card rounded-2xl p-3.5 text-left hover:border-amber-400/40 flex items-center justify-between gap-2">
-            <div class="min-w-0">
-              <div class="text-[11px] uppercase tracking-wider" style="color: var(--text-muted);">Clients Reached Out</div>
-              <div class="font-playfair text-lg font-semibold mt-0.5 truncate" id="chat-strip-clients">6 Clients</div>
-            </div>
-            <span class="badge-gold text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0" id="chat-strip-replied">2 Replied</span>
-          </button>
-
-          <button type="button" onclick="toggleHandledDrawer()" class="surface-card rounded-2xl p-3.5 text-left hover:border-amber-400/40 flex items-center justify-between gap-2">
-            <div class="min-w-0">
-              <div class="text-[11px] uppercase tracking-wider" style="color: var(--text-muted);">Handled Quietly</div>
-              <div class="font-playfair text-lg font-semibold mt-0.5 truncate" id="chat-strip-handled">3 Actions</div>
-            </div>
-            <span class="text-xs underline shrink-0" style="color: var(--accent-primary);">View</span>
+          <!-- Context Menu -->
+          <button onclick="switchMainTab('settings')" title="Chief of Staff Options" class="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-elevated)] transition-colors">
+            <i data-lucide="more-vertical" class="w-4 h-4"></i>
           </button>
         </div>
+      </header>
 
-        <!-- Collapsible "What I Handled Quietly" Drawer -->
-        <div id="handled-quietly-drawer" class="hidden surface-elevated rounded-2xl p-4 text-xs space-y-2.5">
-          <div class="flex items-center justify-between">
-            <span class="font-semibold uppercase tracking-wider" style="color: var(--accent-primary);">Handled Without Interrupting You</span>
-            <button type="button" onclick="toggleHandledDrawer()" class="text-xs hover:underline" style="color: var(--text-muted);">Close</button>
+      <!-- Chat Feed Container -->
+      <div id="chat-messages-container" class="flex-1 overflow-y-auto px-4 sm:px-12 md:px-24 py-6 space-y-6">
+
+        <!-- Central Greeting Hero (Matching Screenshot) -->
+        <div class="text-center py-6 flex flex-col items-center">
+          <!-- Big 4-Pointed Glowing Emerald Star -->
+          <div class="relative w-20 h-20 mb-3 flex items-center justify-center">
+            <div class="absolute inset-0 rounded-full bg-[var(--emerald-primary)]/20 blur-xl"></div>
+            <svg class="w-14 h-14 text-[var(--emerald-glow)] relative z-10 filter drop-shadow-[0_0_16px_rgba(0,255,135,0.7)]" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0L14.6 9.4L24 12L14.6 14.6L12 24L9.4 14.6L0 12L9.4 9.4L12 0Z"/>
+            </svg>
           </div>
-          <div class="space-y-2" id="quiet-actions-list">
-            <div class="flex items-start gap-2.5">
-              <span class="badge-emerald px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 mt-0.5">SENT</span>
-              <div>
-                <span class="font-medium">Followed up with Malhotra Logistics</span> — Sent gentle check-in on the ₹4,80,000 WhatsApp-to-ERP proposal after 4 quiet days.
-              </div>
-            </div>
-            <div class="flex items-start gap-2.5">
-              <span class="badge-gold px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 mt-0.5">PAUSED</span>
-              <div>
-                <span class="font-medium">Paused reminders for Priya Shah (Brightleaf Clinics)</span> — Detected her Out-of-Office reply; scheduled next touchpoint for Oct 21.
-              </div>
-            </div>
-            <div class="flex items-start gap-2.5">
-              <span class="badge-emerald px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 mt-0.5">TRACKED</span>
-              <div>
-                <span class="font-medium">Logged CFO review note from Iyer Textiles</span> — Raju Iyer shared that CFO Lakshmi Iyer is reviewing the ₹2,40,000 Invoice Bot scope.
-              </div>
+          
+          <h2 class="text-2xl font-bold tracking-tight text-white mb-1">Chief of Staff</h2>
+          <p class="text-xs sm:text-sm text-[var(--text-muted)] mb-2 font-medium">Your AI Executive Assistant</p>
+          <div class="text-[11px] uppercase tracking-widest text-[var(--emerald-glow)] font-semibold flex items-center gap-2">
+            <span>Plan</span>
+            <span class="text-[var(--text-dim)]">·</span>
+            <span>Build</span>
+            <span class="text-[var(--text-dim)]">·</span>
+            <span>Execute</span>
+          </div>
+
+          <!-- Date Divider Pill -->
+          <div class="mt-6 flex items-center justify-center">
+            <span class="px-3 py-1 rounded-full text-[11px] font-semibold bg-[#131922] border border-[var(--border-hairline)] text-[var(--text-muted)]">
+              Today
+            </span>
+          </div>
+        </div>
+
+        <!-- 1. AI Initial Welcome Message -->
+        <div class="flex items-start gap-3.5 max-w-2xl">
+          <!-- Avatar -->
+          <div class="w-8 h-8 rounded-full bg-[#0B2117] border border-[var(--emerald-primary)]/40 flex items-center justify-center shrink-0 mt-0.5 glow-emerald-sm">
+            <svg class="w-4 h-4 text-[var(--emerald-glow)]" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0L14.6 9.4L24 12L14.6 14.6L12 24L9.4 14.6L0 12L9.4 9.4L12 0Z"/>
+            </svg>
+          </div>
+          <!-- Bubble -->
+          <div class="flex-1 bg-[var(--bg-ai-bubble)] border border-[var(--border-subtle)] rounded-2xl rounded-tl-sm p-4 text-xs sm:text-sm leading-relaxed text-[var(--text-main)] shadow-lg space-y-2.5">
+            <p class="font-semibold text-white">Hey Ayush 👋</p>
+            <p>I'm <strong class="text-[var(--emerald-glow)] font-semibold">Chief of Staff</strong> — your AI agent, here to help you plan, build, and execute autonomously.</p>
+            <p class="text-[var(--text-muted)]">Tell me what you need today — whether it's unblocking ongoing deals, preparing counter-offers, running pipeline sweeps, or just a second brain to think with.</p>
+            <div class="text-[10px] text-[var(--text-dim)] text-right pt-1 font-mono">10:24 AM</div>
+          </div>
+        </div>
+
+        <!-- 2. User Message (Matching Screenshot styling) -->
+        <div class="flex justify-end">
+          <div class="max-w-xl bg-[var(--bg-user-bubble)] border border-[var(--border-emerald)] rounded-2xl rounded-tr-sm p-4 text-xs sm:text-sm text-white leading-relaxed shadow-lg">
+            <p>Can you review Raju Malhotra's 20% discount request on Deal D-1 and plan out my weekly pipeline priorities?</p>
+            <div class="flex items-center justify-end gap-1.5 mt-2 text-[10px] text-[var(--emerald-glow)] font-mono">
+              <span>10:26 AM</span>
+              <!-- Double Checkmark Read Receipts -->
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 6L7 17l-5-5"/>
+                <path d="M22 10l-7.5 7.5L13 16"/>
+              </svg>
             </div>
           </div>
         </div>
+
+        <!-- 3. AI Response with Structured Points + Embedded Action Cards -->
+        <div class="flex items-start gap-3.5 max-w-2xl">
+          <div class="w-8 h-8 rounded-full bg-[#0B2117] border border-[var(--emerald-primary)]/40 flex items-center justify-center shrink-0 mt-0.5 glow-emerald-sm">
+            <svg class="w-4 h-4 text-[var(--emerald-glow)]" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0L14.6 9.4L24 12L14.6 14.6L12 24L9.4 14.6L0 12L9.4 9.4L12 0Z"/>
+            </svg>
+          </div>
+          <div class="flex-1 bg-[var(--bg-ai-bubble)] border border-[var(--border-subtle)] rounded-2xl rounded-tl-sm p-4 text-xs sm:text-sm text-[var(--text-main)] space-y-3 shadow-lg">
+            <p>Got it! I evaluated Raju's request against your deterministic guardrails and catalog:</p>
+            
+            <!-- Numbered Points List -->
+            <div class="space-y-2">
+              <div class="flex items-start gap-2.5">
+                <span class="w-5 h-5 rounded-full bg-[#082919] border border-[var(--emerald-primary)] text-[var(--emerald-glow)] text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
+                <div>
+                  <strong class="text-white">Deterministic Guard Trigger:</strong> Raju claimed a 20% verbal promise. Guard G08 flagged this as unverified, and G10 capped autonomous discount at 5%.
+                </div>
+              </div>
+              <div class="flex items-start gap-2.5">
+                <span class="w-5 h-5 rounded-full bg-[#082919] border border-[var(--emerald-primary)] text-[var(--emerald-glow)] text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
+                <div>
+                  <strong class="text-white">Grounded Counter-Offer:</strong> Formatted counter-offer drafted at <strong>₹4,56,000</strong> (5% discount on ₹4,80,000 base). Slot proposed: 15:00 - 15:30 IST.
+                </div>
+              </div>
+              <div class="flex items-start gap-2.5">
+                <span class="w-5 h-5 rounded-full bg-[#082919] border border-[var(--emerald-primary)] text-[var(--emerald-glow)] text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">3</span>
+                <div>
+                  <strong class="text-white">Weekly Targets:</strong> Q4 Revenue target progress at <strong>₹18.8L / ₹35.0L (53.7%)</strong> with 2 quiet follow-ups scheduled.
+                </div>
+              </div>
+            </div>
+
+            <!-- EMBEDDED CARD 1: Weekly Plan Progress (Matching Screenshot) -->
+            <div class="bg-[#090D13] border border-[var(--border-hairline)] rounded-xl p-3.5 mt-2 space-y-2.5">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="calendar" class="w-4 h-4 text-[var(--emerald-glow)]"></i>
+                  <span class="text-xs font-semibold text-white">Weekly Pipeline Plan</span>
+                </div>
+                <span class="text-[11px] font-mono text-[var(--emerald-glow)]">75%</span>
+              </div>
+              <div class="text-[11px] text-[var(--text-muted)]">
+                Creating your personalized schedule and dispatching ready drafts...
+              </div>
+              <div class="w-full bg-[#18212D] rounded-full h-2 overflow-hidden">
+                <div class="progress-emerald-shimmer h-full rounded-full" style="width: 75%"></div>
+              </div>
+            </div>
+
+            <!-- EMBEDDED CARD 2: 1-Tap Decision Action Card (Raju 5% Discount) -->
+            <div id="card-raju-decision" class="bg-[#0D1812] border border-[var(--border-emerald)] rounded-xl p-3.5 space-y-3">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="shield-check" class="w-4 h-4 text-[var(--emerald-glow)]"></i>
+                  <span class="text-xs font-bold text-white">Pending Founder Authorization</span>
+                </div>
+                <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">Action Required</span>
+              </div>
+              
+              <div class="text-xs text-[var(--text-muted)] space-y-1">
+                <div>Recipient: <strong class="text-white">Raju Malhotra</strong> (<span class="font-mono text-[11px] text-[var(--text-dim)]">raju@malhotralogistics.in</span>)</div>
+                <div>Counter-Offer: <strong class="text-[var(--emerald-glow)] text-sm font-bold font-mono">₹4,56,000</strong> (5% max mandate discount)</div>
+                <div class="text-[11px] text-[var(--text-dim)]">SHA-256 Rendered Body Hash: <span class="font-mono text-[10px]">6d3ae43bb904f...</span></div>
+              </div>
+
+              <!-- Button & Undo state -->
+              <div id="raju-action-controls" class="pt-1 flex items-center gap-2">
+                <button onclick="approveRajuProposal()" class="flex-1 py-2 px-3 rounded-lg bg-[var(--emerald-primary)] hover:bg-[var(--emerald-glow)] text-black font-bold text-xs flex items-center justify-center gap-2 transition-colors glow-emerald-sm">
+                  <i data-lucide="check" class="w-4 h-4"></i>
+                  <span>Approve & Send via Gmail</span>
+                </button>
+                <button onclick="rejectRajuProposal()" class="py-2 px-3 rounded-lg bg-[#18212C] hover:bg-[#202B3A] text-xs font-medium text-[var(--text-muted)] hover:text-white transition-colors">
+                  Modify
+                </button>
+              </div>
+
+              <!-- Undo State (Hidden by default) -->
+              <div id="raju-undo-banner" class="hidden p-2.5 rounded-lg bg-[#10241A] border border-[var(--emerald-primary)]/50 flex items-center justify-between text-xs">
+                <span class="text-white font-medium">✓ Approved! Dispatching in <strong id="undo-countdown-num" class="text-[var(--emerald-glow)] font-mono">15s</strong></span>
+                <button onclick="cancelRajuApproval()" class="text-xs font-bold text-amber-300 hover:text-amber-200 underline">Undo Action</button>
+              </div>
+            </div>
+
+            <div class="text-[10px] text-[var(--text-dim)] text-right pt-1 font-mono">10:26 AM</div>
+          </div>
+        </div>
+
+        <!-- Dynamic User Messages Container -->
+        <div id="dynamic-messages" class="space-y-6"></div>
+
       </div>
 
-      <!-- =====================================================
-           ABSTRACTED DECISION CARD ("NEEDS YOUR QUICK CALL")
-           ===================================================== -->
-      <div id="decision-card-container" class="surface-card rounded-3xl p-5 sm:p-6 border-l-4" style="border-left-color: var(--accent-primary);">
-        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <div class="flex items-center gap-2">
-            <span class="badge-amber text-xs font-semibold px-2.5 py-0.5 rounded-full">Needs Your Quick Call</span>
-            <span class="text-xs" style="color: var(--text-muted);">Malhotra Logistics · ₹4,80,000 Deal</span>
-          </div>
-          <button type="button" onclick="toggleDecisionPlainContext()" class="text-xs underline" style="color: var(--accent-primary);">
-            Why am I seeing this?
-          </button>
-        </div>
+      <!-- Bottom Chat Input Bar (With Voice Control Microphone replacing Emoji) -->
+      <footer class="p-4 sm:p-5 border-t border-[var(--border-hairline)] bg-[var(--bg-surface)]/80 backdrop-blur-md shrink-0">
+        <form onsubmit="handleChatSubmit(event)" class="max-w-4xl mx-auto flex items-center gap-2.5">
+          
+          <!-- Attachment Button (Drop / File Picker) -->
+          <label title="Attach document or sync Excel database" class="cursor-pointer w-10 h-10 rounded-xl flex items-center justify-center text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-elevated)] border border-transparent hover:border-[var(--border-hairline)] transition-all shrink-0">
+            <i data-lucide="paperclip" class="w-5 h-5"></i>
+            <input type="file" class="hidden" accept=".xlsx,.xls,.csv,.json,.pdf,.txt" onchange="handleFileUpload(event)" />
+          </label>
 
-        <h2 class="font-playfair text-xl sm:text-2xl font-normal mb-2">
-          Raju Malhotra asked for 20% off. Send your standard 5% counter-offer?
-        </h2>
-
-        <p class="text-sm leading-relaxed mb-4" style="color: var(--text-secondary);">
-          Raju replied claiming a 20% discount was mentioned on a call. Because your rules cap automatic discounts at <strong id="decision-cap-display" style="color: var(--text-primary);">5%</strong>, I prepared a warm counter-offer at <strong style="color: var(--text-primary);">₹4,56,000</strong> (5% off) bundled with Annual Support (<strong style="color: var(--text-primary);">₹60,000/yr</strong>) and suggested a walkthrough on <strong style="color: var(--text-primary);">Thursday, 3:00 PM IST</strong>.
-        </p>
-
-        <!-- Plain-English Explanation Drawer (No Hashes or Guard Codes!) -->
-        <div id="decision-plain-context" class="hidden surface-elevated rounded-2xl p-3.5 mb-4 text-xs space-y-1.5" style="color: var(--text-secondary);">
-          <div><strong style="color: var(--text-primary);">Your Note on File:</strong> &ldquo;Price-sensitive. Flex only together with annual support. Never more than 5% without me.&rdquo;</div>
-          <div><strong style="color: var(--text-primary);">Verified Numbers Used:</strong> ₹4,56,000 setup (5% off ₹4,80,000) · ₹60,000/yr Annual Support · ₹15,000/mo Cloud Connector · Thursday 3:00–3:30 PM IST open on your calendar.</div>
-        </div>
-
-        <!-- Editable Message Preview Box -->
-        <div class="surface-elevated rounded-2xl p-4 mb-4">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-xs font-medium" style="color: var(--text-muted);">To: Raju Malhotra &lt;raju@malhotralogistics.in&gt;</span>
-            <button type="button" onclick="toggleEditDraft()" id="edit-draft-toggle-btn" class="text-xs font-medium underline" style="color: var(--accent-primary);">
-              Edit wording
-            </button>
-          </div>
-          <div id="draft-preview-static" class="text-xs sm:text-sm whitespace-pre-line leading-relaxed" style="color: var(--text-primary);">Dear Raju,
-
-Thank you for your note on the Warehouse WhatsApp-to-ERP automation proposal.
-
-We can extend a 5% founder courtesy on the one-time setup fee, bringing implementation to ₹4,56,000 (down from ₹4,80,000) when paired with our Annual Support plan (₹60,000/year). The monthly cloud connector remains ₹15,000/month on 50/50 payment terms.
-
-Would Thursday from 3:00 PM to 3:30 PM IST work to walk through the rollout together?
-
-Warm regards,
-Meera</div>
-          <textarea id="draft-preview-editor" rows="7" class="hidden w-full surface-input rounded-xl p-3 text-xs sm:text-sm leading-relaxed"></textarea>
-        </div>
-
-        <!-- Action Buttons / Undo State -->
-        <div id="decision-action-buttons" class="flex flex-wrap items-center gap-2.5">
-          <button type="button" id="approve-counter-btn" onclick="approveCounterOffer()" class="btn-gold px-5 py-2.5 rounded-full text-xs sm:text-sm flex items-center gap-2">
-            <i data-lucide="check" class="w-4 h-4"></i>
-            <span>Approve &amp; Send Reply</span>
-          </button>
-          <button type="button" onclick="toggleEditDraft()" class="btn-ghost px-4 py-2.5 rounded-full text-xs sm:text-sm">
-            Adjust Offer
-          </button>
-          <button type="button" onclick="skipCounterOffer()" class="btn-ghost px-4 py-2.5 rounded-full text-xs sm:text-sm" style="color: var(--text-muted);">
-            Hold for Later
-          </button>
-        </div>
-
-        <!-- Calm Undo Grace Period Bar (Shown after approval) -->
-        <div id="decision-undo-bar" class="hidden flex items-center justify-between gap-3 pt-1">
-          <div class="flex items-center gap-2 text-xs sm:text-sm" style="color: var(--status-emerald);">
-            <i data-lucide="send" class="w-4 h-4"></i>
-            <span id="undo-countdown-text">Approved — sending to Raju Malhotra in 15s...</span>
-          </div>
-          <button type="button" onclick="undoCounterOffer()" class="btn-ghost px-3.5 py-1.5 rounded-full text-xs font-semibold">
-            Undo Send
-          </button>
-        </div>
-      </div>
-
-      <!-- =====================================================
-           CONVERSATIONAL STREAM WITH CHIEF OF STAFF
-           ===================================================== -->
-      <div class="surface-card rounded-3xl p-4 sm:p-6 flex flex-col gap-4">
-        <div class="flex flex-wrap items-center justify-between gap-2 border-b pb-3" style="border-color: var(--border-hairline);">
-          <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full" style="background-color: var(--accent-primary);"></span>
-            <h2 class="font-playfair text-lg font-medium">Direct Line to Your Chief of Staff</h2>
-          </div>
-          <span class="text-xs" style="color: var(--text-muted);">Connected to live deals &amp; outreach DB</span>
-        </div>
-
-        <!-- Chat Messages List -->
-        <div id="chat-messages-container" class="flex flex-col gap-3.5 max-h-[380px] overflow-y-auto pr-1">
-          <!-- Initial Concierge Message -->
-          <div class="flex items-start gap-3">
-            <div class="w-8 h-8 rounded-full flex items-center justify-center font-playfair text-xs font-bold shrink-0" style="background-color: var(--accent-soft); color: var(--accent-primary); border: 1px solid var(--accent-primary);">
-              CS
-            </div>
-            <div class="surface-elevated rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed max-w-[88%]">
-              <p>I&rsquo;m keeping an eye on your <strong>6 deals (₹18,80,000 total value)</strong> against your <strong>₹35,00,000</strong> target. Ask me anything in plain English—or drop an Excel sheet, CSV, or JSON file below to smart-merge updates into your live deals and outreach database.</p>
+          <!-- Input Container -->
+          <div class="flex-1 relative flex items-center">
+            <input 
+              type="text" 
+              id="chat-input" 
+              placeholder="Type a message or instruction for Chief of Staff..." 
+              class="w-full bg-[#080B0F] border border-[var(--border-hairline)] focus:border-[var(--emerald-primary)] rounded-xl py-3 pl-4 pr-12 text-xs sm:text-sm text-white placeholder-[var(--text-dim)] focus:outline-none transition-colors"
+              autocomplete="off"
+            />
+            
+            <!-- Voice Waveform (Active when listening) -->
+            <div id="voice-waveform" class="hidden absolute right-3 flex items-center gap-1 h-6">
+              <div class="wave-bar"></div>
+              <div class="wave-bar"></div>
+              <div class="wave-bar"></div>
+              <div class="wave-bar"></div>
+              <div class="wave-bar"></div>
             </div>
           </div>
-        </div>
 
-        <!-- Suggested Founder Prompts -->
-        <div class="flex flex-wrap gap-1.5 pt-1">
-          <button type="button" onclick="sendQuickPrompt('How close are we to our revenue target?')" class="btn-ghost px-3 py-1.5 rounded-full text-xs">
-            How close are we to target?
+          <!-- VOICE CONTROL BUTTON (Replaces Emoji per user explicit request) -->
+          <button 
+            type="button" 
+            id="voice-control-btn"
+            onclick="toggleVoiceControl()" 
+            title="Voice Control / Speech Input (Click to speak)" 
+            class="w-10 h-10 rounded-xl flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--emerald-glow)] hover:bg-[#0B2117] border border-transparent hover:border-[var(--emerald-primary)]/40 transition-all shrink-0 relative group"
+          >
+            <i id="mic-icon" data-lucide="mic" class="w-5 h-5"></i>
+            <span id="mic-pulse" class="hidden absolute inset-0 rounded-xl bg-[var(--emerald-glow)]/20 animate-ping pointer-events-none"></span>
           </button>
-          <button type="button" onclick="sendQuickPrompt('Draft a gentle check-in for Arjun Mehta at Kestrel Foods')" class="btn-ghost px-3 py-1.5 rounded-full text-xs">
-            Nudge Arjun at Kestrel Foods
-          </button>
-          <button type="button" onclick="sendQuickPrompt('Who have we reached out to this week?')" class="btn-ghost px-3 py-1.5 rounded-full text-xs">
-            Clients reached out to
-          </button>
-          <button type="button" onclick="sendQuickPrompt('Update our revenue target to ₹45,00,000')" class="btn-ghost px-3 py-1.5 rounded-full text-xs">
-            Set target to ₹45L
-          </button>
-        </div>
 
-        <!-- Chat Input Bar with Integrated File Upload Button -->
-        <form id="chat-form" onsubmit="handleChatSubmit(event)" class="flex items-center gap-2 pt-1">
-          <button type="button" onclick="openUploadModal()" class="btn-ghost w-10 h-10 rounded-2xl flex items-center justify-center shrink-0" title="Upload Excel, CSV, or JSON file to smart-merge into DB" aria-label="Upload Excel, CSV, or JSON file">
-            <i data-lucide="paperclip" class="w-4 h-4" style="color: var(--accent-primary);"></i>
-          </button>
-          <input
-            type="text"
-            id="chat-input"
-            placeholder="Ask your Chief of Staff, or type 'Add deal Reliance Retail ₹8,50,000'..."
-            class="surface-input flex-1 px-4 py-2.5 rounded-2xl text-sm min-w-0"
-          />
-          <button type="submit" class="btn-gold px-4 py-2.5 rounded-2xl text-sm flex items-center gap-1.5 shrink-0">
-            <span>Ask</span>
-            <i data-lucide="arrow-up-right" class="w-4 h-4"></i>
+          <!-- Send Message Button -->
+          <button 
+            type="submit" 
+            title="Send Message (Enter)"
+            class="w-10 h-10 rounded-xl bg-[var(--emerald-glow)] hover:bg-[#00E575] text-black flex items-center justify-center shadow-lg transition-all shrink-0 glow-emerald-sm group"
+          >
+            <i data-lucide="send" class="w-4 h-4 transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"></i>
           </button>
         </form>
+      </footer>
+    </section>
+
+    <!-- ------------------------------------------------------------ -->
+    <!-- TAB VIEW 2: DEALS & PIPELINE                                  -->
+    <!-- ------------------------------------------------------------ -->
+    <section id="view-deals" class="hidden flex-1 flex flex-col h-full overflow-hidden p-6 space-y-5">
+      <div class="flex items-center justify-between pb-4 border-b border-[var(--border-hairline)]">
+        <div>
+          <h2 class="text-xl font-bold text-white tracking-tight">Executive Deals Pipeline</h2>
+          <p class="text-xs text-[var(--text-muted)]">Active client negotiations, outreach cadences, and Q4 revenue targets</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <label class="cursor-pointer px-3 py-1.5 rounded-lg bg-[var(--emerald-primary)] text-black font-bold text-xs flex items-center gap-2 hover:bg-[var(--emerald-glow)] transition-colors glow-emerald-sm">
+            <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+            <span>Import Excel / CSV</span>
+            <input type="file" class="hidden" accept=".xlsx,.xls,.csv" onchange="handleFileUpload(event)" />
+          </label>
+        </div>
+      </div>
+
+      <!-- Q4 Revenue Target Progress Bar -->
+      <div class="bg-[var(--bg-surface)] border border-[var(--border-hairline)] rounded-2xl p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="text-xs uppercase tracking-wider text-[var(--text-muted)] font-semibold">Q4 Revenue Target</div>
+          <div class="font-mono text-sm font-bold text-white">
+            <span class="text-[var(--emerald-glow)]">₹18,80,000</span> / ₹35,00,000 (53.7%)
+          </div>
+        </div>
+        <div class="w-full bg-[#18212D] rounded-full h-3 overflow-hidden">
+          <div class="progress-emerald-shimmer h-full rounded-full" style="width: 53.7%"></div>
+        </div>
+        <div class="flex items-center justify-between text-xs text-[var(--text-dim)]">
+          <span>6 Active Deals in Pipeline</span>
+          <span class="text-emerald-400 font-medium">₹16,20,000 to Q4 Goal</span>
+        </div>
+      </div>
+
+      <!-- Deals Table / Cards Grid -->
+      <div id="deals-cards-grid" class="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-6">
+        <!-- Rendered dynamically by renderDeals() -->
       </div>
     </section>
 
-    <!-- ==========================================
-         VIEW 2: FOUNDER DASHBOARD TAB
-         (Current Target, Clients Reached Out To, Ongoing Deals + Data Sync)
-         ========================================== -->
-    <section id="view-dashboard" class="hidden animate-fade-in flex flex-col gap-7">
-      
-      <!-- Dashboard Header & Manual Data Upload Bar -->
-      <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+    <!-- ------------------------------------------------------------ -->
+    <!-- TAB VIEW 3: TASKS & DECISIONS                                 -->
+    <!-- ------------------------------------------------------------ -->
+    <section id="view-tasks" class="hidden flex-1 flex flex-col h-full overflow-hidden p-6 space-y-5">
+      <div class="flex items-center justify-between pb-4 border-b border-[var(--border-hairline)]">
         <div>
-          <div class="text-xs uppercase tracking-widest font-semibold mb-1" style="color: var(--accent-primary);">
-            Executive Pulse
-          </div>
-          <h1 class="font-playfair text-2xl sm:text-4xl font-normal">
-            Target, Client Outreach &amp; Active Deals
-          </h1>
+          <h2 class="text-xl font-bold text-white tracking-tight">Decisions & Guardrail Checks</h2>
+          <p class="text-xs text-[var(--text-muted)]">Autonomous actions requiring explicit founder sign-off</p>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <button type="button" onclick="openUploadModal()" class="btn-gold px-4 py-2 rounded-full text-xs sm:text-sm flex items-center gap-2">
-            <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
-            <span>Upload Excel / JSON / CSV</span>
-          </button>
-          <button type="button" onclick="openNewDealModal()" class="btn-ghost px-4 py-2 rounded-full text-xs sm:text-sm flex items-center gap-1.5">
-            <i data-lucide="plus" class="w-4 h-4"></i>
-            <span>New Deal</span>
-          </button>
-        </div>
+        <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+          1 Action Pending
+        </span>
       </div>
 
-      <!-- 1. CURRENT REVENUE TARGET & HIGH-SIGNAL KPIs -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        
-        <!-- Revenue Target Card (Spans 2 columns on desktop) -->
-        <div class="surface-card rounded-3xl p-6 lg:col-span-2 flex flex-col justify-between gap-5">
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <span class="text-xs uppercase tracking-wider font-semibold" style="color: var(--text-muted);">
-                Current Revenue Target (Q4)
-              </span>
-              <div class="flex items-baseline gap-3 mt-1 flex-wrap">
-                <span class="font-playfair text-3xl sm:text-4xl font-semibold" id="dash-pipeline-total">₹18,80,000</span>
-                <span class="text-sm" style="color: var(--text-muted);">
-                  of <strong id="dash-target-amount" style="color: var(--text-primary);">₹35,00,000</strong> goal
-                </span>
-              </div>
+      <div class="flex-1 overflow-y-auto space-y-4">
+        <!-- Task 1: Raju Malhotra -->
+        <div class="bg-[var(--bg-surface)] border border-[var(--border-emerald)] rounded-2xl p-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <span class="w-3 h-3 rounded-full bg-amber-400 animate-pulse"></span>
+              <h3 class="text-base font-bold text-white">Raju Malhotra · Deal D-1 Discount Authorization</h3>
             </div>
+            <span class="text-xs font-mono text-[var(--emerald-glow)]">Task #task_5f82c757</span>
+          </div>
 
-            <button type="button" onclick="toggleTargetEditor()" class="btn-ghost px-3.5 py-1.5 rounded-full text-xs flex items-center gap-1.5">
-              <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5" style="color: var(--accent-primary);"></i>
-              <span>Edit Target</span>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div class="p-3 rounded-xl bg-[#090D14] border border-[var(--border-hairline)]">
+              <span class="text-[var(--text-dim)]">Claimed Discount</span>
+              <div class="font-bold text-rose-400 mt-1">20% (Unverified verbal claim)</div>
+            </div>
+            <div class="p-3 rounded-xl bg-[#090D14] border border-[var(--border-hairline)]">
+              <span class="text-[var(--text-dim)]">Mandate Policy</span>
+              <div class="font-bold text-[var(--emerald-glow)] mt-1">5% Max Authorized (₹4,56,000)</div>
+            </div>
+            <div class="p-3 rounded-xl bg-[#090D14] border border-[var(--border-hairline)]">
+              <span class="text-[var(--text-dim)]">Guard Verdict</span>
+              <div class="font-bold text-amber-300 mt-1">ASK (Founder Explicit Sign-off)</div>
+            </div>
+          </div>
+
+          <p class="text-xs text-[var(--text-muted)]">
+            Guard G08 triggered because customer claimed founder promised 20%. Guard G10 enforces max 5% discount.
+            Rendered response is ready for dispatch via Gmail.
+          </p>
+
+          <div class="flex items-center gap-3 pt-2">
+            <button onclick="approveRajuProposal(); switchMainTab('chat');" class="px-4 py-2 rounded-xl bg-[var(--emerald-primary)] hover:bg-[var(--emerald-glow)] text-black font-bold text-xs flex items-center gap-2 transition-colors">
+              <i data-lucide="check" class="w-4 h-4"></i>
+              <span>Approve & Dispatch Counter-Offer</span>
+            </button>
+            <button onclick="switchMainTab('chat')" class="px-4 py-2 rounded-xl bg-[#18212C] text-xs font-semibold text-[var(--text-muted)] hover:text-white transition-colors">
+              Inspect in Chat
             </button>
           </div>
-
-          <!-- Inline Target Editor (Hidden by default) -->
-          <div id="target-inline-editor" class="hidden surface-elevated rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3">
-            <label for="target-input-inr" class="text-xs font-medium">Set new revenue target (INR):</label>
-            <div class="flex items-center gap-2">
-              <input type="number" id="target-input-inr" value="3500000" step="100000" min="500000" class="surface-input px-3 py-1.5 rounded-xl text-xs w-40" />
-              <button type="button" onclick="saveNewTarget()" class="btn-gold px-3.5 py-1.5 rounded-xl text-xs">Save Target</button>
-              <button type="button" onclick="toggleTargetEditor()" class="btn-ghost px-3 py-1.5 rounded-xl text-xs">Cancel</button>
-            </div>
-          </div>
-
-          <!-- Stacked Progress Bar (Won + Negotiating + Proposals Sent) -->
-          <div class="space-y-2">
-            <div class="w-full h-3 rounded-full overflow-hidden flex surface-elevated">
-              <div id="bar-won" class="h-full transition-all duration-500" style="width: 13%; background-color: var(--status-emerald);" title="Closed Won"></div>
-              <div id="bar-negotiating" class="h-full transition-all duration-500" style="width: 27%; background-color: var(--accent-primary);" title="In Negotiation"></div>
-              <div id="bar-proposal" class="h-full transition-all duration-500 opacity-55" style="width: 14%; background-color: var(--accent-primary);" title="Proposal Sent"></div>
-            </div>
-            <div class="flex flex-wrap items-center justify-between text-xs gap-2" style="color: var(--text-secondary);">
-              <div class="flex items-center gap-4 flex-wrap">
-                <span class="flex items-center gap-1.5">
-                  <span class="w-2.5 h-2.5 rounded-full" style="background-color: var(--status-emerald);"></span>
-                  <span>Won: <strong id="legend-won">₹4,50,000</strong></span>
-                </span>
-                <span class="flex items-center gap-1.5">
-                  <span class="w-2.5 h-2.5 rounded-full" style="background-color: var(--accent-primary);"></span>
-                  <span>Negotiating: <strong id="legend-negotiating">₹9,30,000</strong></span>
-                </span>
-                <span class="flex items-center gap-1.5">
-                  <span class="w-2.5 h-2.5 rounded-full opacity-55" style="background-color: var(--accent-primary);"></span>
-                  <span>Proposals Out: <strong id="legend-proposal">₹5,00,000</strong></span>
-                </span>
-              </div>
-              <span id="dash-target-gap" class="font-medium" style="color: var(--accent-primary);">₹16,20,000 to goal</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Summary Snapshot Column -->
-        <div class="surface-card rounded-3xl p-6 flex flex-col justify-between gap-4">
-          <div>
-            <span class="text-xs uppercase tracking-wider font-semibold" style="color: var(--text-muted);">
-              Outreach &amp; Deal Velocity
-            </span>
-            <div class="grid grid-cols-2 gap-3 mt-3">
-              <div class="surface-elevated rounded-2xl p-3.5">
-                <div class="text-xs" style="color: var(--text-muted);">Clients Contacted</div>
-                <div class="font-playfair text-2xl font-semibold mt-0.5" id="kpi-clients-count">6</div>
-                <div class="text-[11px] mt-1" style="color: var(--status-emerald);">100% verified</div>
-              </div>
-              <div class="surface-elevated rounded-2xl p-3.5">
-                <div class="text-xs" style="color: var(--text-muted);">Ongoing Deals</div>
-                <div class="font-playfair text-2xl font-semibold mt-0.5" id="kpi-ongoing-count">5</div>
-                <div class="text-[11px] mt-1" style="color: var(--accent-primary);" id="kpi-won-sublabel">+ 1 Closed Won</div>
-              </div>
-            </div>
-          </div>
-          <div class="flex items-center justify-between pt-2 border-t text-xs gap-2" style="border-color: var(--border-hairline); color: var(--text-secondary);">
-            <span id="last-db-sync-label" class="truncate">Database synced with studio seed</span>
-            <button type="button" onclick="exportDatabaseJSON()" class="underline font-medium shrink-0" style="color: var(--accent-primary);">Export JSON</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- 2. CLIENTS REACHED OUT TO -->
-      <div class="surface-card rounded-3xl p-6 flex flex-col gap-4">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 class="font-playfair text-xl sm:text-2xl font-normal">Clients Reached Out To</h2>
-            <p class="text-xs mt-0.5" style="color: var(--text-muted);">
-              Every client your Chief of Staff has contacted or is tracking, in plain English.
-            </p>
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="badge-gold text-xs px-3 py-1 rounded-full font-medium" id="outreach-summary-pill">
-              6 Clients · 2 Active Replies
-            </span>
-          </div>
-        </div>
-
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse">
-            <thead>
-              <tr class="border-b text-[11px] uppercase tracking-wider" style="border-color: var(--border-hairline); color: var(--text-muted);">
-                <th class="py-3 pr-4">Client &amp; Company</th>
-                <th class="py-3 px-4">Last Reached Out</th>
-                <th class="py-3 px-4">What’s Happening</th>
-                <th class="py-3 pl-4 text-right">Quick Action</th>
-              </tr>
-            </thead>
-            <tbody id="clients-outreach-tbody" class="divide-y text-sm" style="border-color: var(--border-hairline);">
-              <!-- Populated by JS -->
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- 3. ONGOING DEALS -->
-      <div class="flex flex-col gap-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 class="font-playfair text-xl sm:text-2xl font-normal">Ongoing Deals</h2>
-            <p class="text-xs mt-0.5" style="color: var(--text-muted);">
-              Click any deal to adjust commercial terms, founder notes, or stage.
-            </p>
-          </div>
-
-          <!-- Filter Pills & Search -->
-          <div class="flex flex-wrap items-center gap-2">
-            <div class="flex items-center gap-1 p-1 rounded-full surface-elevated text-xs overflow-x-auto">
-              <button type="button" id="deal-filter-all" onclick="setDealFilter('all')" class="nav-pill active px-3 py-1 rounded-full">All</button>
-              <button type="button" id="deal-filter-negotiating" onclick="setDealFilter('negotiating')" class="nav-pill px-3 py-1 rounded-full">Negotiating</button>
-              <button type="button" id="deal-filter-proposal_sent" onclick="setDealFilter('proposal_sent')" class="nav-pill px-3 py-1 rounded-full">Proposal Sent</button>
-              <button type="button" id="deal-filter-won" onclick="setDealFilter('won')" class="nav-pill px-3 py-1 rounded-full">Won</button>
-            </div>
-            <input
-              type="text"
-              id="deal-search-input"
-              oninput="renderDashboard()"
-              placeholder="Search deals or clients..."
-              class="surface-input px-3.5 py-1.5 rounded-full text-xs w-44 sm:w-52"
-            />
-          </div>
-        </div>
-
-        <!-- Deals Grid -->
-        <div id="ongoing-deals-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <!-- Populated by JS -->
         </div>
       </div>
     </section>
 
-    <!-- ==========================================
-         VIEW 3 & 5: UNIFIED PROFILE & APP SETTINGS
-         (Accessible via both Profile button and Settings tab)
-         ========================================== -->
-    <section id="view-settings" class="hidden animate-fade-in max-w-4xl mx-auto flex flex-col gap-6">
-      
-      <!-- Header with Sub-View Switcher (Profile & Identity vs. App & Delegation Rules) -->
-      <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b pb-5" style="border-color: var(--border-hairline);">
+    <!-- ------------------------------------------------------------ -->
+    <!-- TAB VIEW 4: ACTIVITY & BRIEF                                  -->
+    <!-- ------------------------------------------------------------ -->
+    <section id="view-activity" class="hidden flex-1 flex flex-col h-full overflow-hidden p-6 space-y-5">
+      <div class="flex items-center justify-between pb-4 border-b border-[var(--border-hairline)]">
         <div>
-          <div class="text-xs uppercase tracking-widest font-semibold mb-1" style="color: var(--accent-primary);" id="settings-eyebrow">
-            Founder Control Center
+          <h2 class="text-xl font-bold text-white tracking-tight">Audit Trail & Daily Brief</h2>
+          <p class="text-xs text-[var(--text-muted)]">Verified external receipts and tamper-proof action logs</p>
+        </div>
+        <span class="text-xs text-[var(--emerald-glow)] font-mono">100% Immutable Receipts</span>
+      </div>
+
+      <div class="flex-1 overflow-y-auto space-y-3">
+        <!-- Log 1 -->
+        <div class="p-4 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-hairline)] flex items-start gap-4">
+          <div class="w-8 h-8 rounded-lg bg-[#0E281D] text-[var(--emerald-glow)] flex items-center justify-center shrink-0 mt-0.5">
+            <i data-lucide="shield-check" class="w-4 h-4"></i>
           </div>
-          <h1 class="font-playfair text-2xl sm:text-4xl font-normal" id="settings-main-heading">
-            Founder Profile &amp; App Settings
-          </h1>
-          <p class="text-xs sm:text-sm mt-1" style="color: var(--text-secondary);">
-            Update your personal profile, commercial guardrails, appearance, and connected data sources in one place.
-          </p>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-white">Inbound Verification Passed (INB-002)</span>
+              <span class="text-[10px] text-[var(--text-dim)] font-mono">2 mins ago</span>
+            </div>
+            <p class="text-xs text-[var(--text-muted)] mt-1">
+              Parsed customer price objection from Raju Patel. Reconciled with Deal D-1. Created task_5f82c757.
+            </p>
+            <div class="mt-2 text-[10px] text-[var(--emerald-glow)] font-mono">Receipt: rcpt_20261017_f7acd5 · Terminal State: VERIFIED</div>
+          </div>
         </div>
 
-        <!-- Quick Jump Pills inside Profile/Settings -->
-        <div class="flex items-center gap-1.5 p-1 rounded-full surface-elevated self-start">
-          <button type="button" id="subtab-all" onclick="filterProfileSettings('all')" class="nav-pill active px-3 py-1 rounded-full text-xs">
-            All Controls
-          </button>
-          <button type="button" id="subtab-profile" onclick="filterProfileSettings('profile')" class="nav-pill px-3 py-1 rounded-full text-xs">
-            My Profile
-          </button>
-          <button type="button" id="subtab-rules" onclick="filterProfileSettings('rules')" class="nav-pill px-3 py-1 rounded-full text-xs">
-            App Settings
-          </button>
+        <!-- Log 2 -->
+        <div class="p-4 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-hairline)] flex items-start gap-4">
+          <div class="w-8 h-8 rounded-lg bg-[#14202E] text-sky-400 flex items-center justify-center shrink-0 mt-0.5">
+            <i data-lucide="calendar" class="w-4 h-4"></i>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-white">Slot Verified for Scheduling</span>
+              <span class="text-[10px] text-[var(--text-dim)] font-mono">15 mins ago</span>
+            </div>
+            <p class="text-xs text-[var(--text-muted)] mt-1">
+              Found available 30-minute founder slot at 15:00 - 15:30 IST without meeting conflicts.
+            </p>
+          </div>
+        </div>
+
+        <!-- Log 3 -->
+        <div class="p-4 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-hairline)] flex items-start gap-4">
+          <div class="w-8 h-8 rounded-lg bg-[#181E29] text-purple-400 flex items-center justify-center shrink-0 mt-0.5">
+            <i data-lucide="filter" class="w-4 h-4"></i>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-white">Quiet Pipeline Sweep Executed</span>
+              <span class="text-[10px] text-[var(--text-dim)] font-mono">1 hour ago</span>
+            </div>
+            <p class="text-xs text-[var(--text-muted)] mt-1">
+              Inspected 6 pipeline deals. Identified 2 follow-up opportunities. Auto-paused OOO client Priya Shah.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------------ -->
+    <!-- TAB VIEW 5: SETTINGS & GUARDRAILS                             -->
+    <!-- ------------------------------------------------------------ -->
+    <section id="view-settings" class="hidden flex-1 flex flex-col h-full overflow-hidden p-6 space-y-5">
+      <div class="flex items-center justify-between pb-4 border-b border-[var(--border-hairline)]">
+        <div>
+          <h2 class="text-xl font-bold text-white tracking-tight">Executive Settings & Guardrails</h2>
+          <p class="text-xs text-[var(--text-muted)]">Configure autonomous boundaries, kill switches, and founder policies</p>
         </div>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        <!-- LEFT COLUMN (5 cols): FOUNDER PROFILE CARD & EDIT FORM -->
-        <div id="section-founder-profile" class="lg:col-span-5 flex flex-col gap-5">
-          <div class="surface-card rounded-3xl p-6 flex flex-col gap-4">
-            <div class="flex items-center gap-3.5">
-              <div id="profile-card-avatar" class="w-14 h-14 rounded-2xl flex items-center justify-center font-playfair text-xl font-bold shrink-0" style="background-color: var(--accent-primary); color: var(--accent-contrast);">
-                MN
-              </div>
-              <div>
-                <h2 class="font-playfair text-xl font-medium" id="profile-card-name">Meera Nair</h2>
-                <div class="text-xs" style="color: var(--text-secondary);" id="profile-card-role">Founder · Nair Automation Studio</div>
-                <div class="badge-emerald inline-block text-[11px] font-medium px-2 py-0.5 rounded-full mt-1">
-                  Gmail &amp; Calendar Connected
-                </div>
-              </div>
+      <div class="flex-1 overflow-y-auto space-y-5 max-w-2xl">
+        <!-- Emergency Kill Switch -->
+        <div class="p-5 rounded-2xl bg-[#1C1215] border border-rose-500/40 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-bold text-rose-300">Emergency Kill Switch</h3>
+              <p class="text-xs text-rose-400/80">Immediately suspends all outbound emails, calendar invites, and automated drafts.</p>
             </div>
-
-            <form id="profile-form" onsubmit="saveProfileChanges(event)" class="space-y-3.5 pt-2 border-t" style="border-color: var(--border-hairline);">
-              <div>
-                <label for="prof-name" class="block text-xs font-medium mb-1" style="color: var(--text-secondary);">Full Name</label>
-                <input type="text" id="prof-name" value="Meera Nair" class="surface-input w-full px-3.5 py-2 rounded-xl text-sm" required />
-              </div>
-
-              <div>
-                <label for="prof-signature" class="block text-xs font-medium mb-1" style="color: var(--text-secondary);">Email Sign-Off Name</label>
-                <input type="text" id="prof-signature" value="Meera" class="surface-input w-full px-3.5 py-2 rounded-xl text-sm" required />
-              </div>
-
-              <div>
-                <label for="prof-business" class="block text-xs font-medium mb-1" style="color: var(--text-secondary);">Company / Studio Name</label>
-                <input type="text" id="prof-business" value="Nair Automation Studio" class="surface-input w-full px-3.5 py-2 rounded-xl text-sm" required />
-              </div>
-
-              <div>
-                <label for="prof-email" class="block text-xs font-medium mb-1" style="color: var(--text-secondary);">Primary Connected Email</label>
-                <input type="email" id="prof-email" value="meera@nairstudio.in" class="surface-input w-full px-3.5 py-2 rounded-xl text-sm" required />
-              </div>
-
-              <div>
-                <label for="prof-timezone" class="block text-xs font-medium mb-1" style="color: var(--text-secondary);">Working Timezone</label>
-                <select id="prof-timezone" class="surface-input w-full px-3.5 py-2 rounded-xl text-sm">
-                  <option value="Asia/Kolkata" selected>Asia/Kolkata (IST, UTC+5:30)</option>
-                  <option value="Europe/London">Europe/London (GMT/BST)</option>
-                  <option value="America/New_York">America/New_York (EST/EDT)</option>
-                  <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
-                </select>
-              </div>
-
-              <div>
-                <label for="prof-services" class="block text-xs font-medium mb-1" style="color: var(--text-secondary);">Supported Client Platforms</label>
-                <input type="text" id="prof-services" value="Zoho Books, Tally, Shopify, WhatsApp Business, Google Sheets" class="surface-input w-full px-3.5 py-2 rounded-xl text-xs" />
-                <p class="text-[11px] mt-1" style="color: var(--text-muted);">Requests outside this list (e.g., SAP, Oracle) automatically wait for your approval.</p>
-              </div>
-
-              <button type="submit" class="btn-gold w-full py-2.5 rounded-xl text-xs sm:text-sm font-semibold">
-                Save Profile Changes
-              </button>
-            </form>
+            <button onclick="toggleKillSwitch()" id="settings-kill-btn" class="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition-colors">
+              Engage Kill Switch
+            </button>
           </div>
         </div>
 
-        <!-- RIGHT COLUMN (7 cols): APP SETTINGS, DELEGATION RULES & THEME -->
-        <div id="section-app-settings" class="lg:col-span-7 flex flex-col gap-5">
+        <!-- Autonomy Limits -->
+        <div class="p-5 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-hairline)] space-y-4">
+          <h3 class="text-sm font-bold text-white">Discount & Deal Mandates</h3>
           
-          <!-- Card 1: Commercial & Delegation Rules -->
-          <div class="surface-card rounded-3xl p-6 flex flex-col gap-5">
+          <div class="space-y-2">
+            <div class="flex justify-between text-xs">
+              <span class="text-[var(--text-muted)]">Max Automated Discount:</span>
+              <span id="discount-val-label" class="font-bold text-[var(--emerald-glow)] font-mono">5%</span>
+            </div>
+            <input type="range" min="0" max="15" value="5" step="1" oninput="updateDiscountThreshold(this.value)" class="w-full accent-[var(--emerald-glow)]" />
+            <p class="text-[11px] text-[var(--text-dim)]">Any customer objection demanding discounts over this value will trigger Guard G10 and require explicit 1-tap founder approval.</p>
+          </div>
+
+          <div class="pt-3 border-t border-[var(--border-hairline)] flex items-center justify-between">
             <div>
-              <h2 class="font-playfair text-xl font-normal">How Your Chief of Staff Works</h2>
-              <p class="text-xs mt-0.5" style="color: var(--text-muted);">
-                Plain-English boundaries that govern what happens automatically vs. what waits for your nod.
-              </p>
+              <div class="text-xs font-semibold text-white">Follow-up Cadence Limit</div>
+              <div class="text-[11px] text-[var(--text-dim)]">Wait at least 48 hours before sending routine outreach</div>
             </div>
-
-            <!-- Max Discount Slider -->
-            <div class="surface-elevated rounded-2xl p-4 space-y-2">
-              <div class="flex items-center justify-between">
-                <label for="setting-discount-slider" class="text-sm font-medium">Maximum Discount Without Asking</label>
-                <span id="setting-discount-badge" class="badge-gold px-2.5 py-0.5 rounded-full text-xs font-bold">Up to 5%</span>
-              </div>
-              <input
-                type="range"
-                id="setting-discount-slider"
-                min="0"
-                max="15"
-                step="1"
-                value="5"
-                oninput="updateSettingsPreview()"
-                class="w-full cursor-pointer"
-              />
-              <p class="text-xs" style="color: var(--text-secondary);">
-                If a client asks for more than <strong id="setting-discount-inline">5%</strong> off, your Chief of Staff drafts a counter-offer and waits for your approval.
-              </p>
-            </div>
-
-            <!-- Follow-up Cadence & Undo Grace Period -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div class="surface-elevated rounded-2xl p-4">
-                <label for="setting-quiet-days" class="block text-xs font-medium mb-1.5" style="color: var(--text-secondary);">
-                  Nudge Quiet Clients After
-                </label>
-                <select id="setting-quiet-days" onchange="updateSettingsPreview()" class="surface-input w-full px-3 py-2 rounded-xl text-xs sm:text-sm">
-                  <option value="3">3 quiet days</option>
-                  <option value="4" selected>4 quiet days (Recommended)</option>
-                  <option value="7">7 quiet days</option>
-                </select>
-              </div>
-
-              <div class="surface-elevated rounded-2xl p-4">
-                <label for="setting-undo-seconds" class="block text-xs font-medium mb-1.5" style="color: var(--text-secondary);">
-                  Sending Grace Window (Undo)
-                </label>
-                <select id="setting-undo-seconds" onchange="updateSettingsPreview()" class="surface-input w-full px-3 py-2 rounded-xl text-xs sm:text-sm">
-                  <option value="5">5 seconds</option>
-                  <option value="15" selected>15 seconds (Standard)</option>
-                  <option value="30">30 seconds</option>
-                </select>
-              </div>
-            </div>
-
-            <!-- Toggle: Pause All Automatic Outreach (Abstracted Kill Switch) -->
-            <div class="surface-elevated rounded-2xl p-4 flex items-center justify-between gap-4">
-              <div>
-                <div class="text-sm font-medium">Pause All Automatic Follow-Ups</div>
-                <div class="text-xs mt-0.5" style="color: var(--text-secondary);">
-                  When paused, your Chief of Staff only drafts messages for your review and never sends anything automatically.
-                </div>
-              </div>
-              <button
-                type="button"
-                id="pause-autonomy-btn"
-                onclick="toggleAutonomyPause()"
-                class="px-4 py-2 rounded-full text-xs font-semibold shrink-0 badge-emerald"
-              >
-                Active (Click to Pause)
-              </button>
-            </div>
+            <input type="checkbox" checked class="w-4 h-4 accent-[var(--emerald-glow)]" />
           </div>
-
-          <!-- Card 2: Appearance, Theme & Database Sync -->
-          <div class="surface-card rounded-3xl p-6 flex flex-col gap-4">
-            <h2 class="font-playfair text-xl font-normal">Appearance &amp; Database</h2>
-
-            <div class="surface-elevated rounded-2xl p-4 flex items-center justify-between gap-4">
-              <div>
-                <div class="text-sm font-medium">Editorial Theme Mode</div>
-                <div class="text-xs mt-0.5" style="color: var(--text-secondary);" id="settings-theme-desc">
-                  Currently using Slate-Black background with Off-White Playfair Display typography.
-                </div>
-              </div>
-              <button type="button" onclick="toggleTheme()" class="btn-ghost px-4 py-2 rounded-full text-xs font-semibold shrink-0" id="settings-theme-btn">
-                Switch to Light Mode
-              </button>
-            </div>
-
-            <div class="surface-elevated rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div class="text-sm font-medium">Manual Database Sync (Excel, CSV, JSON)</div>
-                <div class="text-xs mt-0.5" style="color: var(--text-secondary);">
-                  Smart-merge spreadsheets or JSON exports into your deals, client outreach log, and target without losing existing fields.
-                </div>
-              </div>
-              <div class="flex items-center gap-2">
-                <button type="button" onclick="openUploadModal()" class="btn-gold px-3.5 py-2 rounded-full text-xs">
-                  Upload File
-                </button>
-                <button type="button" onclick="resetDemoDatabase()" class="btn-ghost px-3.5 py-2 rounded-full text-xs">
-                  Reset Demo Data
-                </button>
-              </div>
-            </div>
-          </div>
-
         </div>
       </div>
     </section>
 
   </main>
 
-  <!-- =========================================================
-       MODAL 1: MANUAL DATA UPLOAD & SMART MERGE (EXCEL, CSV, JSON)
-       ========================================================= -->
-  <div id="upload-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-    <div class="surface-card rounded-3xl max-w-xl w-full p-6 sm:p-7 flex flex-col gap-5 animate-fade-in max-h-[90vh] overflow-y-auto">
-      <div class="flex items-start justify-between gap-3">
-        <div>
-          <span class="text-xs uppercase tracking-widest font-semibold" style="color: var(--accent-primary);">
-            Conflict-Free Database Sync
-          </span>
-          <h2 class="font-playfair text-2xl font-normal mt-0.5">
-            Upload &amp; Merge Excel, CSV, or JSON
-          </h2>
-          <p class="text-xs mt-1" style="color: var(--text-secondary);">
-            Drop any multi-sheet Excel workbook, CSV, or JSON file. Existing deals and clients are matched by ID, company, or email and updated non-destructively without overwriting untouched fields.
-          </p>
-        </div>
-        <button type="button" onclick="closeUploadModal()" class="btn-ghost w-8 h-8 rounded-full flex items-center justify-center shrink-0" aria-label="Close upload modal">
-          <i data-lucide="x" class="w-4 h-4"></i>
-        </button>
-      </div>
-
-      <!-- Merge Strategy Selector -->
-      <div class="surface-elevated rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-2 text-xs">
-        <span class="font-medium" style="color: var(--text-secondary);">Database Merge Mode:</span>
-        <div class="flex items-center gap-1.5">
-          <button type="button" id="merge-mode-smart" onclick="setMergeMode('smart')" class="nav-pill active px-3 py-1 rounded-full">
-            Smart Merge (Update + Add)
-          </button>
-          <button type="button" id="merge-mode-append" onclick="setMergeMode('append')" class="nav-pill px-3 py-1 rounded-full">
-            Append New Only
-          </button>
-          <button type="button" id="merge-mode-replace" onclick="setMergeMode('replace')" class="nav-pill px-3 py-1 rounded-full">
-            Replace All
-          </button>
-        </div>
-      </div>
-
-      <!-- Drag and Drop Zone -->
-      <label
-        for="file-upload-input"
-        id="upload-dropzone"
-        ondragover="handleDragOver(event)"
-        ondragleave="handleDragLeave(event)"
-        ondrop="handleFileDrop(event)"
-        class="surface-elevated border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer hover:border-amber-400/60 transition flex flex-col items-center gap-2"
-        style="border-color: var(--border-strong);"
-      >
-        <div class="w-11 h-11 rounded-2xl flex items-center justify-center" style="background-color: var(--accent-soft); color: var(--accent-primary);">
-          <i data-lucide="file-up" class="w-5 h-5"></i>
-        </div>
-        <div class="text-sm font-medium">
-          Click to choose a file or drag &amp; drop here
-        </div>
-        <div class="text-xs" style="color: var(--text-muted);">
-          Supports multi-sheet <strong>.xlsx</strong>, <strong>.xls</strong>, <strong>.csv</strong>, and <strong>.json</strong>
-        </div>
-        <input
-          type="file"
-          id="file-upload-input"
-          accept=".xlsx,.xls,.csv,.json"
-          onchange="handleFileSelect(event)"
-          class="hidden"
-        />
-      </label>
-
-      <!-- 1-Click Sample Data Loaders & Template Download -->
-      <div class="surface-elevated rounded-2xl p-4 space-y-2.5">
-        <div class="flex items-center justify-between text-xs">
-          <span class="font-semibold" style="color: var(--text-secondary);">Test smart merge with sample data or download template:</span>
-          <button type="button" onclick="downloadSampleExcelTemplate()" class="underline font-medium" style="color: var(--accent-primary);">
-            Download .xlsx Template
-          </button>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <button type="button" onclick="simulateSampleImport('excel_q4')" class="btn-ghost px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5">
-            <i data-lucide="table" class="w-3.5 h-3.5" style="color: var(--status-emerald);"></i>
-            <span>Sample Excel: Q4 Deals + Kestrel Update.xlsx</span>
-          </button>
-          <button type="button" onclick="simulateSampleImport('json_outreach')" class="btn-ghost px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5">
-            <i data-lucide="braces" class="w-3.5 h-3.5" style="color: var(--accent-primary);"></i>
-            <span>Sample JSON: Outreach &amp; Target Sync.json</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Import Preview & Conflict-Free Diff Box -->
-      <div id="upload-preview-box" class="hidden surface-elevated rounded-2xl p-4 space-y-3 border" style="border-color: var(--accent-primary);">
-        <div class="flex items-center justify-between gap-2 flex-wrap">
-          <span class="text-xs font-semibold badge-emerald px-2.5 py-0.5 rounded-full" id="upload-preview-badge">0 Merge Conflicts · Ready</span>
-          <span class="text-xs font-mono" style="color: var(--text-muted);" id="upload-preview-filename">file.xlsx</span>
-        </div>
-        <div id="upload-preview-summary" class="text-xs leading-relaxed space-y-1" style="color: var(--text-primary);"></div>
-        <div class="flex justify-end gap-2 pt-1">
-          <button type="button" onclick="closeUploadModal()" class="btn-ghost px-3.5 py-2 rounded-xl text-xs">
-            Cancel
-          </button>
-          <button type="button" onclick="confirmStagedImport()" class="btn-gold px-4 py-2 rounded-xl text-xs font-semibold">
-            Merge into Live Database
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- =========================================================
-       MODAL 2: EDIT OR ADD DEAL MODAL
-       ========================================================= -->
-  <div id="deal-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-    <div class="surface-card rounded-3xl max-w-lg w-full p-6 flex flex-col gap-4 animate-fade-in">
-      <div class="flex items-center justify-between">
-        <h2 class="font-playfair text-2xl font-normal" id="deal-modal-title">Update Deal</h2>
-        <button type="button" onclick="closeDealModal()" class="btn-ghost w-8 h-8 rounded-full flex items-center justify-center">
-          <i data-lucide="x" class="w-4 h-4"></i>
-        </button>
-      </div>
-
-      <form id="deal-form" onsubmit="saveDealModal(event)" class="space-y-3.5">
-        <input type="hidden" id="deal-modal-id" />
-        <div>
-          <label for="deal-modal-company" class="block text-xs font-medium mb-1" style="color: var(--text-secondary);">Company Name</label>
-          <input type="text" id="deal-modal-company" class="surface-input w-full px-3.5 py-2 rounded-xl text-sm" placeholder="e.g. Mahindra Logistics" required />
-        </div>
-        <div>
-          <label for="deal-modal-name" class="block text-xs font-medium mb-1" style="color: var(--text-secondary);">Project / Deal Title</label>
-          <input type="text" id="deal-modal-name" class="surface-input w-full px-3.5 py-2 rounded-xl text-sm" placeholder="e.g. ERP WhatsApp Order Bot" required />
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label for="deal-modal-contact" class="block text-xs font-medium mb-1" style="color: var(--text-secondary);">Client Contact Name</label>
-            <input type="text" id="deal-modal-contact" class="surface-input w-full px-3.5 py-2 rounded-xl text-sm" placeholder="e.g. Vikram Rao" required />
-          </div>
-          <div>
-            <label for="deal-modal-email" class="block text-xs font-medium mb-1" style="color: var(--text-secondary);">Client Email</label>
-            <input type="email" id="deal-modal-email" class="surface-input w-full px-3.5 py-2 rounded-xl text-sm" placeholder="vikram@company.in" />
-          </div>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label for="deal-modal-value" class="block text-xs font-medium mb-1" style="color: var(--text-secondary);">Deal Value (INR)</label>
-            <input type="number" id="deal-modal-value" class="surface-input w-full px-3.5 py-2 rounded-xl text-sm" placeholder="480000" min="0" step="5000" required />
-          </div>
-          <div>
-            <label for="deal-modal-stage" class="block text-xs font-medium mb-1" style="color: var(--text-secondary);">Deal Stage</label>
-            <select id="deal-modal-stage" class="surface-input w-full px-3.5 py-2 rounded-xl text-sm">
-              <option value="proposal_sent">Proposal Sent</option>
-              <option value="negotiating">Negotiating</option>
-              <option value="won">Closed Won</option>
-            </select>
-          </div>
-        </div>
-        <div>
-          <label for="deal-modal-notes" class="block text-xs font-medium mb-1" style="color: var(--text-secondary);">Founder Guardrail Note (Plain English)</label>
-          <textarea id="deal-modal-notes" rows="2" class="surface-input w-full px-3.5 py-2 rounded-xl text-xs" placeholder="e.g. Never discount more than 5% without asking me."></textarea>
-        </div>
-
-        <div class="flex items-center justify-end gap-2 pt-2">
-          <button type="button" onclick="closeDealModal()" class="btn-ghost px-4 py-2 rounded-xl text-xs">Cancel</button>
-          <button type="submit" class="btn-gold px-5 py-2 rounded-xl text-xs font-semibold">Save to Database</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- TOAST NOTIFICATION BANNER -->
-  <div id="toast-banner" class="hidden fixed bottom-5 right-5 z-50 surface-card px-4 py-3 rounded-2xl border flex items-center gap-2.5 text-xs sm:text-sm shadow-2xl" style="border-color: var(--accent-primary);">
-    <span class="w-2 h-2 rounded-full" style="background-color: var(--accent-primary);"></span>
-    <span id="toast-message">Saved</span>
-  </div>
-
+  <!-- ============================================================== -->
+  <!-- 4. JAVASCRIPT STATE & INTERACTIONS                              -->
+  <!-- ============================================================== -->
   <script>
-    // =========================================================================
-    // INITIAL SEED STATE (100% Grounded in Chief-of-Staff.zip seed data)
-    // =========================================================================
-    const INITIAL_STATE = {
-      theme: 'dark',
-      currentView: 'chat',
-      dealFilter: 'all',
-      mergeMode: 'smart', // 'smart' | 'append' | 'replace'
-      founder: {
-        name: 'Meera Nair',
-        signature: 'Meera',
-        businessName: 'Nair Automation Studio',
-        email: 'meera@nairstudio.in',
-        timezone: 'Asia/Kolkata',
-        services: 'Zoho Books, Tally, Shopify, WhatsApp Business, Google Sheets'
-      },
-      settings: {
-        maxDiscountPct: 5,
-        quietDaysThreshold: 4,
-        undoWindowSeconds: 15,
-        autonomyPaused: false
-      },
-      targetINR: 3500000, // ₹35,00,000 Q4 target
-      pendingDecision: {
-        id: 'PA-RAJU-01',
-        status: 'pending',
-        contactName: 'Raju Malhotra',
-        company: 'Malhotra Logistics',
-        dealValue: 480000,
-        counterValue: 456000
-      },
+    // Initialize Lucide Icons
+    lucide.createIcons();
+
+    // ----------------------------------------------------------------
+    // Application State
+    // ----------------------------------------------------------------
+    const state = {
+      currentTab: 'chat',
+      sidebarCollapsed: false,
+      isListening: false,
+      killSwitchEngaged: false,
+      maxDiscount: 5,
+      undoTimer: null,
       deals: [
         {
           id: 'D-1',
           company: 'Malhotra Logistics',
-          title: 'Warehouse WhatsApp-to-ERP order automation',
+          title: 'Warehouse WhatsApp-to-ERP automation',
           contactName: 'Raju Malhotra',
           contactEmail: 'raju@malhotralogistics.in',
           stage: 'negotiating',
           valueINR: 480000,
-          lastReachedOut: '4 days ago',
-          outreachStatus: 'Asked for 20% off · 5% counter-offer ready',
-          outreachBadge: 'amber',
-          founderNotes: 'Price-sensitive. Flex only together with annual support (₹60,000/yr). Never more than 5% without me.'
+          outreachStatus: '5% counter-offer drafted · Awaiting approval',
+          lastReachedOut: '4 days ago'
         },
         {
           id: 'D-2',
@@ -1112,10 +854,8 @@ Meera</div>
           contactEmail: 'raju@iyertextiles.in',
           stage: 'negotiating',
           valueINR: 240000,
-          lastReachedOut: 'Yesterday',
-          outreachStatus: 'Replied · Reviewing scope with CFO Lakshmi Iyer',
-          outreachBadge: 'emerald',
-          founderNotes: 'Active scope review with Raju Iyer and finance team.'
+          outreachStatus: 'Replied · Reviewing scope with CFO',
+          lastReachedOut: 'Yesterday'
         },
         {
           id: 'D-3',
@@ -1125,1350 +865,601 @@ Meera</div>
           contactEmail: 'priya@brightleafclinics.in',
           stage: 'proposal_sent',
           valueINR: 320000,
-          lastReachedOut: '6 days ago',
           outreachStatus: 'Out of office until Oct 20 · Auto-paused',
-          outreachBadge: 'gold',
-          founderNotes: 'Clinic group; decision maker travels often (Europe/London).'
+          lastReachedOut: '6 days ago'
         },
         {
           id: 'D-4',
-          company: 'Kestrel Foods',
-          title: 'Inventory sync automation',
-          contactName: 'Arjun Mehta',
-          contactEmail: 'arjun@kestrelfoods.in',
-          stage: 'proposal_sent',
-          valueINR: 180000,
-          lastReachedOut: '5 days ago',
-          outreachStatus: 'Quiet for 5 days · Ready for gentle check-in',
-          outreachBadge: 'amber',
-          founderNotes: 'Requires founder nod before sending follow-up.'
+          company: 'Apex Supply Co',
+          title: 'Vendor portal automation',
+          contactName: 'Kunal Verma',
+          contactEmail: 'kunal@apexsupply.in',
+          stage: 'negotiating',
+          valueINR: 520000,
+          outreachStatus: 'Contract sent · Legal review underway',
+          lastReachedOut: '3 days ago'
         },
         {
           id: 'D-5',
-          company: 'Northwind Studio',
-          title: 'Multi-channel order & CRM workflow',
-          contactName: 'Ananya Rao',
-          contactEmail: 'ananya@northwindstudio.in',
-          stage: 'negotiating',
-          valueINR: 210000,
-          lastReachedOut: 'Yesterday',
-          outreachStatus: 'Replied · Sharing scope questions this week',
-          outreachBadge: 'emerald',
-          founderNotes: 'Asked to discuss proposal scope before final sign-off.'
+          company: 'Zenith Logistics',
+          title: 'Dispatch notification agent',
+          contactName: 'Neha Sen',
+          contactEmail: 'neha@zenithlogistics.in',
+          stage: 'proposal_sent',
+          valueINR: 380000,
+          outreachStatus: 'Quiet follow-up scheduled for tomorrow',
+          lastReachedOut: '5 days ago'
         },
         {
           id: 'D-6',
-          company: 'Coastal Realty',
-          title: 'Lead routing & WhatsApp concierge',
-          contactName: 'Farhan Ali',
-          contactEmail: 'farhan@coastalrealty.in',
+          company: 'Nova Commerce',
+          title: 'Shopify order reconciliation',
+          contactName: 'Vikram Mehta',
+          contactEmail: 'vikram@novacommerce.in',
           stage: 'won',
           valueINR: 450000,
-          lastReachedOut: '2 days ago',
-          outreachStatus: 'Closed Won · Onboarding kicked off',
-          outreachBadge: 'emerald',
-          founderNotes: 'Signed and onboarded.'
+          outreachStatus: 'Deal closed · Kickoff scheduled',
+          lastReachedOut: '2 days ago'
         }
-      ],
-      lastSyncLabel: 'Synced with Nair Studio records'
+      ]
     };
 
-    let appState = JSON.parse(JSON.stringify(INITIAL_STATE));
-    let stagedImportRecords = null;
-    let undoTimerInterval = null;
-    let undoRemainingSeconds = 15;
-    let isEditingDraft = false;
-
-    try {
-      const saved = localStorage.getItem('cos_founder_ux_state_v2');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && Array.isArray(parsed.deals) && parsed.founder) {
-          appState = Object.assign({}, INITIAL_STATE, parsed);
-        }
+    // ----------------------------------------------------------------
+    // Tab Navigation
+    // ----------------------------------------------------------------
+    function switchMainTab(tabId) {
+      state.currentTab = tabId;
+      
+      // If switching to chat and sidebar was collapsed, smoothly uncollapse it
+      if (tabId === 'chat' && state.sidebarCollapsed) {
+        toggleHistorySidebar();
       }
-    } catch (e) {
-      // Ignore storage errors in sandboxed iframe
-    }
 
-    function persistState() {
-      try {
-        localStorage.setItem('cos_founder_ux_state_v2', JSON.stringify(appState));
-      } catch (e) {
-        // Ignore storage errors
+      // Update Rail button states
+      document.querySelectorAll('.rail-btn').forEach(btn => {
+        btn.classList.remove('active', 'text-[var(--emerald-glow)]', 'bg-[#0C1A14]', 'border-[var(--emerald-primary)]/30');
+        btn.classList.add('text-[var(--text-muted)]');
+      });
+      const activeBtn = document.getElementById(`rail-tab-${tabId}`);
+      if (activeBtn) {
+        activeBtn.classList.add('active', 'text-[var(--emerald-glow)]', 'bg-[#0C1A14]', 'border-[var(--emerald-primary)]/30');
+        activeBtn.classList.remove('text-[var(--text-muted)]');
       }
-    }
 
-    function formatINR(amount) {
-      const num = Number(amount) || 0;
-      return '₹' + num.toLocaleString('en-IN', { maximumFractionDigits: 0 });
-    }
-
-    function formatShortLakhs(amount) {
-      const num = Number(amount) || 0;
-      return '₹' + (num / 100000).toFixed(1) + 'L';
-    }
-
-    function showToast(message) {
-      const toast = document.getElementById('toast-banner');
-      const text = document.getElementById('toast-message');
-      if (!toast || !text) return;
-      text.textContent = message;
-      toast.classList.remove('hidden');
-      clearTimeout(window.__toastTimer);
-      window.__toastTimer = setTimeout(() => {
-        toast.classList.add('hidden');
-      }, 3400);
-    }
-
-    // =========================================================================
-    // THEME SWITCHING (SLATE-BLACK DARK <-> WARM IVORY LIGHT)
-    // =========================================================================
-    function applyTheme() {
-      const htmlEl = document.documentElement;
-      htmlEl.setAttribute('data-theme', appState.theme);
-      const sunIcon = document.getElementById('theme-icon-sun');
-      const moonIcon = document.getElementById('theme-icon-moon');
-      const settingsThemeBtn = document.getElementById('settings-theme-btn');
-      const settingsThemeDesc = document.getElementById('settings-theme-desc');
-
-      if (appState.theme === 'light') {
-        if (sunIcon) sunIcon.classList.add('hidden');
-        if (moonIcon) moonIcon.classList.remove('hidden');
-        if (settingsThemeBtn) settingsThemeBtn.textContent = 'Switch to Slate-Black Mode';
-        if (settingsThemeDesc) {
-          settingsThemeDesc.textContent = 'Currently using Warm Ivory Light Mode with Slate-Black Playfair Display typography.';
-        }
-      } else {
-        if (sunIcon) sunIcon.classList.remove('hidden');
-        if (moonIcon) moonIcon.classList.add('hidden');
-        if (settingsThemeBtn) settingsThemeBtn.textContent = 'Switch to Light Mode';
-        if (settingsThemeDesc) {
-          settingsThemeDesc.textContent = 'Currently using Slate-Black background with Off-White Playfair Display typography.';
-        }
-      }
-    }
-
-    function toggleTheme() {
-      appState.theme = appState.theme === 'dark' ? 'light' : 'dark';
-      applyTheme();
-      persistState();
-      showToast(appState.theme === 'dark' ? 'Slate-Black editorial theme active' : 'Warm Ivory light mode active');
-    }
-
-    // =========================================================================
-    // VIEW NAVIGATION (CHAT, DASHBOARD, SETTINGS, PROFILE)
-    // =========================================================================
-    function switchView(viewName) {
-      appState.currentView = viewName;
-
-      const viewChat = document.getElementById('view-chat');
-      const viewDash = document.getElementById('view-dashboard');
-      const viewSettings = document.getElementById('view-settings');
-
-      if (viewChat) viewChat.classList.add('hidden');
-      if (viewDash) viewDash.classList.add('hidden');
-      if (viewSettings) viewSettings.classList.add('hidden');
-
-      const navChat = document.getElementById('nav-chat');
-      const navDash = document.getElementById('nav-dashboard');
-      const navSettings = document.getElementById('nav-settings');
-      const navProfile = document.getElementById('nav-profile');
-
-      [navChat, navDash, navSettings, navProfile].forEach(el => {
-        if (el) el.classList.remove('active');
+      // Hide all views, show targeted view
+      ['chat', 'deals', 'tasks', 'activity', 'settings'].forEach(id => {
+        const el = document.getElementById(`view-${id}`);
+        if (el) el.classList.toggle('hidden', id !== tabId);
       });
 
-      if (viewName === 'chat') {
-        if (viewChat) viewChat.classList.remove('hidden');
-        if (navChat) navChat.classList.add('active');
-      } else if (viewName === 'dashboard') {
-        if (viewDash) viewDash.classList.remove('hidden');
-        if (navDash) navDash.classList.add('active');
-        renderDashboard();
-      } else if (viewName === 'settings') {
-        if (viewSettings) viewSettings.classList.remove('hidden');
-        if (navSettings) navSettings.classList.add('active');
-        filterProfileSettings('all');
-      } else if (viewName === 'profile') {
-        if (viewSettings) viewSettings.classList.remove('hidden');
-        if (navProfile) navProfile.classList.add('active');
-        filterProfileSettings('all');
-        const eyebrow = document.getElementById('settings-eyebrow');
-        if (eyebrow) eyebrow.textContent = 'Founder Profile & Workspace Settings';
-      }
-
-      if (window.lucide) window.lucide.createIcons();
+      if (tabId === 'deals') renderDeals();
     }
 
-    function filterProfileSettings(mode) {
-      const subAll = document.getElementById('subtab-all');
-      const subProf = document.getElementById('subtab-profile');
-      const subRules = document.getElementById('subtab-rules');
-      [subAll, subProf, subRules].forEach(b => b && b.classList.remove('active'));
+    // ----------------------------------------------------------------
+    // Collapsible Chat History Sidebar
+    // ----------------------------------------------------------------
+    function toggleHistorySidebar() {
+      const sidebar = document.getElementById('history-sidebar');
+      const toggleIcon = document.getElementById('sidebar-toggle-icon');
+      state.sidebarCollapsed = !state.sidebarCollapsed;
 
-      const profSection = document.getElementById('section-founder-profile');
-      const rulesSection = document.getElementById('section-app-settings');
-
-      if (mode === 'profile') {
-        if (subProf) subProf.classList.add('active');
-        if (profSection) {
-          profSection.classList.remove('hidden', 'lg:col-span-5');
-          profSection.classList.add('lg:col-span-12');
+      if (state.sidebarCollapsed) {
+        sidebar.classList.add('collapsed');
+        if (toggleIcon) {
+          toggleIcon.setAttribute('data-lucide', 'panel-left-open');
         }
-        if (rulesSection) rulesSection.classList.add('hidden');
-      } else if (mode === 'rules') {
-        if (subRules) subRules.classList.add('active');
-        if (rulesSection) {
-          rulesSection.classList.remove('hidden', 'lg:col-span-7');
-          rulesSection.classList.add('lg:col-span-12');
-        }
-        if (profSection) profSection.classList.add('hidden');
       } else {
-        if (subAll) subAll.classList.add('active');
-        if (profSection) {
-          profSection.classList.remove('hidden', 'lg:col-span-12');
-          profSection.classList.add('lg:col-span-5');
+        sidebar.classList.remove('collapsed');
+        if (toggleIcon) {
+          toggleIcon.setAttribute('data-lucide', 'panel-left-close');
         }
-        if (rulesSection) {
-          rulesSection.classList.remove('hidden', 'lg:col-span-12');
-          rulesSection.classList.add('lg:col-span-7');
-        }
+      }
+      if (window.lucide) {
+        window.lucide.createIcons();
       }
     }
 
-    // =========================================================================
-    // CORE PAGE: BRIEFING & DECISION CARD ACTIONS
-    // =========================================================================
-    function toggleHandledDrawer() {
-      const drawer = document.getElementById('handled-quietly-drawer');
-      if (drawer) drawer.classList.toggle('hidden');
-    }
-
-    function toggleDecisionPlainContext() {
-      const box = document.getElementById('decision-plain-context');
-      if (box) box.classList.toggle('hidden');
-    }
-
-    function toggleEditDraft() {
-      const staticEl = document.getElementById('draft-preview-static');
-      const editorEl = document.getElementById('draft-preview-editor');
-      const btn = document.getElementById('edit-draft-toggle-btn');
-      if (!staticEl || !editorEl || !btn) return;
-
-      isEditingDraft = !isEditingDraft;
-      if (isEditingDraft) {
-        editorEl.value = staticEl.textContent;
-        staticEl.classList.add('hidden');
-        editorEl.classList.remove('hidden');
-        editorEl.focus();
-        btn.textContent = 'Save wording';
-      } else {
-        staticEl.textContent = editorEl.value;
-        editorEl.classList.add('hidden');
-        staticEl.classList.remove('hidden');
-        btn.textContent = 'Edit wording';
-        showToast('Draft reply wording updated');
+    // Keyboard shortcut (Ctrl+[ or Cmd+[) to toggle sidebar
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === '[') {
+        e.preventDefault();
+        toggleHistorySidebar();
       }
-    }
-
-    function approveCounterOffer() {
-      if (isEditingDraft) toggleEditDraft();
-      appState.pendingDecision.status = 'approved_undo';
-      const actionBtns = document.getElementById('decision-action-buttons');
-      const undoBar = document.getElementById('decision-undo-bar');
-      const undoText = document.getElementById('undo-countdown-text');
-      const badge = document.getElementById('nav-decision-badge');
-
-      if (actionBtns) actionBtns.classList.add('hidden');
-      if (undoBar) undoBar.classList.remove('hidden');
-      if (badge) badge.classList.add('hidden');
-
-      undoRemainingSeconds = Number(appState.settings.undoWindowSeconds) || 15;
-      if (undoText) {
-        undoText.textContent = `Approved — sending to Raju Malhotra in ${undoRemainingSeconds}s...`;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        startNewChatSession();
       }
+    });
 
-      clearInterval(undoTimerInterval);
-      undoTimerInterval = setInterval(() => {
-        undoRemainingSeconds -= 1;
-        if (undoRemainingSeconds <= 0) {
-          clearInterval(undoTimerInterval);
-          finalizeCounterOfferSend();
-        } else if (undoText) {
-          undoText.textContent = `Approved — sending to Raju Malhotra in ${undoRemainingSeconds}s...`;
-        }
-      }, 1000);
-
-      if (window.lucide) window.lucide.createIcons();
-    }
-
-    function undoCounterOffer() {
-      clearInterval(undoTimerInterval);
-      appState.pendingDecision.status = 'pending';
-      const actionBtns = document.getElementById('decision-action-buttons');
-      const undoBar = document.getElementById('decision-undo-bar');
-      const badge = document.getElementById('nav-decision-badge');
-
-      if (actionBtns) actionBtns.classList.remove('hidden');
-      if (undoBar) undoBar.classList.add('hidden');
-      if (badge) badge.classList.remove('hidden');
-      showToast('Send cancelled — draft returned for your review');
-    }
-
-    function finalizeCounterOfferSend() {
-      appState.pendingDecision.status = 'sent';
-      const card = document.getElementById('decision-card-container');
-      if (card) {
-        card.innerHTML = `
-          <div class="flex items-center justify-between gap-3">
-            <div class="flex items-center gap-2.5 text-sm">
-              <span class="badge-emerald px-2.5 py-0.5 rounded-full text-xs font-semibold">Sent</span>
-              <span>Counter-offer (₹4,56,000 + ₹60,000/yr support) sent to <strong>Raju Malhotra</strong>.</span>
+    function startNewChatSession() {
+      switchMainTab('chat');
+      const container = document.getElementById('dynamic-messages');
+      if (container) {
+        container.innerHTML = `
+          <div class="flex items-start gap-3.5 max-w-2xl animate-fade-in">
+            <div class="w-8 h-8 rounded-full bg-[#0B2117] border border-[var(--emerald-primary)]/40 flex items-center justify-center shrink-0 mt-0.5 glow-emerald-sm">
+              <svg class="w-4 h-4 text-[var(--emerald-glow)]" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 0L14.6 9.4L24 12L14.6 14.6L12 24L9.4 14.6L0 12L9.4 9.4L12 0Z"/>
+              </svg>
             </div>
-            <span class="text-xs" style="color: var(--text-muted);">Just now</span>
+            <div class="flex-1 bg-[var(--bg-ai-bubble)] border border-[var(--border-subtle)] rounded-2xl rounded-tl-sm p-4 text-xs sm:text-sm text-white space-y-1 shadow-lg">
+              <p class="font-semibold text-[var(--emerald-glow)]">New Session Started</p>
+              <p class="text-[var(--text-muted)] text-xs">Ready for your prompt or instructions. You can query deal statuses, schedule follow-ups, or drag and drop Excel/CSV data.</p>
+            </div>
           </div>
         `;
       }
-      const d1 = appState.deals.find(d => d.id === 'D-1');
-      if (d1) {
-        d1.valueINR = 456000;
-        d1.lastReachedOut = 'Just now';
-        d1.outreachStatus = '5% counter-offer sent (₹4,56,000) · Thursday 3 PM proposed';
-        d1.outreachBadge = 'emerald';
-      }
-      renderAllSummaries();
-      persistState();
-      showToast('Reply dispatched to Raju Malhotra');
+      focusChatInput();
     }
 
-    function skipCounterOffer() {
-      const card = document.getElementById('decision-card-container');
-      const badge = document.getElementById('nav-decision-badge');
-      if (card) card.classList.add('hidden');
-      if (badge) badge.classList.add('hidden');
-      showToast('Decision snoozed — moved to Ongoing Deals');
+    function selectChatSession(sessionId) {
+      document.querySelectorAll('.session-item').forEach(el => {
+        el.classList.remove('active', 'bg-[#0C1B14]', 'border-[var(--emerald-primary)]/40', 'text-white');
+        el.classList.add('text-[var(--text-muted)]');
+      });
+      event.currentTarget.classList.add('active', 'bg-[#0C1B14]', 'border-[var(--emerald-primary)]/40', 'text-white');
+      event.currentTarget.classList.remove('text-[var(--text-muted)]');
+      switchMainTab('chat');
     }
 
-    function toggleAudioBrief() {
-      const label = document.getElementById('listen-brief-label');
-      const text = `Good evening ${appState.founder.signature}. Your pipeline stands at ${formatINR(getTotalPipelineINR())} toward your ${formatINR(appState.targetINR)} target. Two quiet follow-ups went out today, Priya Shah is out of the office until October 20th, and Raju Malhotra asked for a pricing review on the Malhotra Logistics proposal.`;
+    function filterChatHistory(query) {
+      const q = query.toLowerCase();
+      document.querySelectorAll('.session-item').forEach(item => {
+        const text = item.innerText.toLowerCase();
+        item.style.display = text.includes(q) ? 'flex' : 'none';
+      });
+    }
 
-      if ('speechSynthesis' in window) {
-        if (window.speechSynthesis.speaking) {
-          window.speechSynthesis.cancel();
-          if (label) label.textContent = 'Listen to 20s Brief';
-          return;
+    // ----------------------------------------------------------------
+    // Voice Control (Microphone Input)
+    // ----------------------------------------------------------------
+    let recognition = null;
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = function(event) {
+        const transcript = event.results[0][0].transcript;
+        const input = document.getElementById('chat-input');
+        if (input) {
+          input.value = transcript;
+          input.focus();
         }
-        const utter = new SpeechSynthesisUtterance(text);
-        utter.rate = 1.0;
-        utter.onend = () => {
-          if (label) label.textContent = 'Listen to 20s Brief';
-        };
-        if (label) label.textContent = 'Stop Briefing';
-        window.speechSynthesis.speak(utter);
+        stopVoiceControl();
+      };
+
+      recognition.onerror = function() {
+        stopVoiceControl();
+      };
+
+      recognition.onend = function() {
+        stopVoiceControl();
+      };
+    }
+
+    function toggleVoiceControl() {
+      if (state.isListening) {
+        stopVoiceControl();
       } else {
-        appendChatMessage('assistant', `🎙️ **Audio Briefing Transcript:** "${text}"`);
+        startVoiceControl();
       }
     }
 
-    // =========================================================================
-    // CONVERSATIONAL AI CHIEF OF STAFF ENGINE
-    // =========================================================================
-    function appendChatMessage(role, htmlText) {
-      const container = document.getElementById('chat-messages-container');
-      if (!container) return;
-
-      const wrapper = document.createElement('div');
-      wrapper.className = role === 'user'
-        ? 'flex items-start justify-end gap-3 animate-fade-in'
-        : 'flex items-start gap-3 animate-fade-in';
-
-      if (role === 'user') {
-        wrapper.innerHTML = `
-          <div class="rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm max-w-[85%]" style="background-color: var(--accent-soft); border: 1px solid var(--accent-primary); color: var(--text-primary);">
-            ${htmlText}
-          </div>
-        `;
-      } else {
-        wrapper.innerHTML = `
-          <div class="w-8 h-8 rounded-full flex items-center justify-center font-playfair text-xs font-bold shrink-0" style="background-color: var(--accent-soft); color: var(--accent-primary); border: 1px solid var(--accent-primary);">
-            CS
-          </div>
-          <div class="surface-elevated rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed max-w-[88%]">
-            ${htmlText}
-          </div>
-        `;
-      }
-
-      container.appendChild(wrapper);
-      container.scrollTop = container.scrollHeight;
-    }
-
-    function sendQuickPrompt(promptText) {
+    function startVoiceControl() {
+      state.isListening = true;
+      const micBtn = document.getElementById('voice-control-btn');
+      const micPulse = document.getElementById('mic-pulse');
+      const waveform = document.getElementById('voice-waveform');
       const input = document.getElementById('chat-input');
-      if (input) input.value = promptText;
-      processUserChat(promptText);
-      if (input) input.value = '';
+
+      if (micBtn) {
+        micBtn.classList.add('bg-[#082919]', 'text-[var(--emerald-glow)]', 'border-[var(--emerald-primary)]');
+      }
+      if (micPulse) micPulse.classList.remove('hidden');
+      if (waveform) waveform.classList.remove('hidden');
+      if (input) input.placeholder = "Listening... Speak your instruction...";
+
+      if (recognition) {
+        try { recognition.start(); } catch (e) {}
+      } else {
+        // Fallback simulation if browser blocks mic permission
+        setTimeout(() => {
+          if (state.isListening && input) {
+            input.value = "Schedule a quiet follow-up for Zenith Logistics";
+            stopVoiceControl();
+          }
+        }, 3200);
+      }
     }
 
+    function stopVoiceControl() {
+      state.isListening = false;
+      const micBtn = document.getElementById('voice-control-btn');
+      const micPulse = document.getElementById('mic-pulse');
+      const waveform = document.getElementById('voice-waveform');
+      const input = document.getElementById('chat-input');
+
+      if (micBtn) {
+        micBtn.classList.remove('bg-[#082919]', 'text-[var(--emerald-glow)]', 'border-[var(--emerald-primary)]');
+      }
+      if (micPulse) micPulse.classList.add('hidden');
+      if (waveform) waveform.classList.add('hidden');
+      if (input) input.placeholder = "Type a message or instruction for Chief of Staff...";
+      
+      if (recognition) {
+        try { recognition.stop(); } catch (e) {}
+      }
+    }
+
+    // ----------------------------------------------------------------
+    // Chat Submission & AI Response Flow
+    // ----------------------------------------------------------------
     function handleChatSubmit(e) {
       e.preventDefault();
       const input = document.getElementById('chat-input');
-      if (!input || !input.value.trim()) return;
-      const text = input.value.trim();
+      const message = input.value.trim();
+      if (!message) return;
+
+      appendUserMessage(message);
       input.value = '';
-      processUserChat(text);
+
+      // Generate context-aware assistant response
+      setTimeout(() => {
+        generateAssistantResponse(message);
+      }, 700);
     }
 
-    function processUserChat(userText) {
-      const escaped = userText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      appendChatMessage('user', escaped);
-
-      const lower = userText.toLowerCase();
-      const totalINR = getTotalPipelineINR();
-      const pct = Math.min(100, Math.round((totalINR / appState.targetINR) * 100));
-
-      const targetMatch = userText.match(/(?:target|goal).*?(\d[\d,]*)/i);
-      if (lower.includes('target') && targetMatch) {
-        let rawNum = parseInt(targetMatch[1].replace(/,/g, ''), 10);
-        if (lower.includes('l') && rawNum < 1000) {
-          rawNum = rawNum * 100000;
-        }
-        if (rawNum >= 100000) {
-          appState.targetINR = rawNum;
-          renderAllSummaries();
-          persistState();
-          const newPct = Math.min(100, Math.round((totalINR / appState.targetINR) * 100));
-          appendChatMessage(
-            'assistant',
-            `I’ve updated your revenue target to <strong>${formatINR(appState.targetINR)}</strong>. With <strong>${formatINR(totalINR)}</strong> across your ${appState.deals.length} deals, you are at <strong>${newPct}%</strong> of goal.`
-          );
-          return;
-        }
-      }
-
-      if (lower.includes('add deal') || lower.includes('add a')) {
-        const valMatch = userText.match(/(\d[\d,]{4,})/);
-        const valueINR = valMatch ? parseInt(valMatch[1].replace(/,/g, ''), 10) : 650000;
-        const companyClean = userText.replace(/add (?:a )?deal|with|for|₹|\d[\d,]*/gi, '').trim() || 'Reliance Retail';
-        const outcome = smartMergeRecords([
-          {
-            company: companyClean,
-            title: 'Automated Vendor & Order Sync',
-            contactName: 'Vikram Desai',
-            contactEmail: 'vikram@client.in',
-            stage: 'proposal_sent',
-            valueINR: valueINR,
-            lastReachedOut: 'Just now',
-            outreachStatus: 'Added from chat · Proposal queued',
-            outreachBadge: 'emerald',
-            founderNotes: 'Created via founder chat command.'
-          }
-        ], 'smart');
-        renderAllSummaries();
-        persistState();
-        appendChatMessage(
-          'assistant',
-          `${outcome.updatedCount > 0 ? 'Updated' : 'Added'} <strong>${companyClean}</strong> (${formatINR(valueINR)}) in your Ongoing Deals. Your total pipeline is now <strong>${formatINR(getTotalPipelineINR())}</strong>.`
-        );
-        return;
-      }
-
-      if (lower.includes('close') || lower.includes('target') || lower.includes('how') || lower.includes('pipeline')) {
-        const wonINR = appState.deals.filter(d => d.stage === 'won').reduce((s, d) => s + d.valueINR, 0);
-        const negINR = appState.deals.filter(d => d.stage === 'negotiating').reduce((s, d) => s + d.valueINR, 0);
-        const gapINR = Math.max(0, appState.targetINR - totalINR);
-        appendChatMessage(
-          'assistant',
-          `You’re at <strong>${pct}%</strong> of your <strong>${formatINR(appState.targetINR)}</strong> target:<br/>` +
-          `• <strong>Closed Won:</strong> ${formatINR(wonINR)}<br/>` +
-          `• <strong>In Active Negotiation:</strong> ${formatINR(negINR)}<br/>` +
-          `• <strong>Total Active + Won:</strong> ${formatINR(totalINR)} (${formatINR(gapINR)} remaining to goal).`
-        );
-        return;
-      }
-
-      if (lower.includes('arjun') || lower.includes('kestrel')) {
-        const d4 = appState.deals.find(d => d.company.toLowerCase().includes('kestrel'));
-        if (d4) {
-          d4.lastReachedOut = 'Just now';
-          d4.outreachStatus = 'Warm check-in sent · Awaiting Arjun’s reply';
-          d4.outreachBadge = 'emerald';
-          renderAllSummaries();
-          persistState();
-        }
-        appendChatMessage(
-          'assistant',
-          `I’ve sent a warm check-in to <strong>Arjun Mehta</strong> at <strong>Kestrel Foods</strong> referencing the <strong>₹1,80,000 Inventory Sync</strong> proposal and offering two 20-minute slots tomorrow afternoon.`
-        );
-        return;
-      }
-
-      if (lower.includes('reach') || lower.includes('client') || lower.includes('who')) {
-        const listHtml = appState.deals
-          .map(d => `• <strong>${d.contactName}</strong> (${d.company}) — <em>${d.outreachStatus}</em>`)
-          .join('<br/>');
-        appendChatMessage(
-          'assistant',
-          `Here are the <strong>${appState.deals.length} clients</strong> we’ve reached out to:<br/>${listHtml}`
-        );
-        return;
-      }
-
-      appendChatMessage(
-        'assistant',
-        `Noted, ${appState.founder.signature}. I’ve checked that against your <strong>${appState.deals.length} active deals (${formatINR(totalINR)})</strong> and your <strong>${appState.settings.maxDiscountPct}%</strong> discount rule. Would you like me to prepare a client note or update the dashboard?`
-      );
+    function appendUserMessage(text) {
+      const container = document.getElementById('dynamic-messages');
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const el = document.createElement('div');
+      el.className = 'flex justify-end';
+      el.innerHTML = `
+        <div class="max-w-xl bg-[var(--bg-user-bubble)] border border-[var(--border-emerald)] rounded-2xl rounded-tr-sm p-4 text-xs sm:text-sm text-white leading-relaxed shadow-lg">
+          <p>${escapeHtml(text)}</p>
+          <div class="flex items-center justify-end gap-1.5 mt-2 text-[10px] text-[var(--emerald-glow)] font-mono">
+            <span>${timeStr}</span>
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6L7 17l-5-5"/>
+              <path d="M22 10l-7.5 7.5L13 16"/>
+            </svg>
+          </div>
+        </div>
+      `;
+      container.appendChild(el);
+      scrollChatToBottom();
     }
 
-    // =========================================================================
-    // DASHBOARD RENDERING (TARGET, CLIENTS REACHED OUT TO, ONGOING DEALS)
-    // =========================================================================
-    function getTotalPipelineINR() {
-      return appState.deals.reduce((sum, d) => sum + (Number(d.valueINR) || 0), 0);
-    }
+    function generateAssistantResponse(prompt) {
+      const container = document.getElementById('dynamic-messages');
+      const p = prompt.toLowerCase();
+      let responseHtml = '';
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    function renderAllSummaries() {
-      const totalINR = getTotalPipelineINR();
-      const targetINR = Number(appState.targetINR) || 3500000;
-      const pct = Math.min(100, Math.round((totalINR / targetINR) * 100));
-
-      const headerBiz = document.getElementById('header-business-name');
-      const headerName = document.getElementById('header-founder-name');
-      const headerInit = document.getElementById('header-avatar-initials');
-      const greetName = document.getElementById('greeting-founder-name');
-      const capDisplay = document.getElementById('decision-cap-display');
-
-      if (headerBiz) headerBiz.textContent = appState.founder.businessName;
-      if (headerName) headerName.textContent = appState.founder.signature;
-      if (greetName) greetName.textContent = appState.founder.signature;
-      if (capDisplay) capDisplay.textContent = appState.settings.maxDiscountPct + '%';
-
-      const initials = appState.founder.name
-        .split(' ')
-        .map(p => p[0])
-        .join('')
-        .slice(0, 2)
-        .toUpperCase();
-      if (headerInit) headerInit.textContent = initials;
-
-      const profAvatar = document.getElementById('profile-card-avatar');
-      const profName = document.getElementById('profile-card-name');
-      const profRole = document.getElementById('profile-card-role');
-      if (profAvatar) profAvatar.textContent = initials;
-      if (profName) profName.textContent = appState.founder.name;
-      if (profRole) profRole.textContent = `Founder · ${appState.founder.businessName}`;
-
-      const stripTarget = document.getElementById('chat-strip-target');
-      const stripPct = document.getElementById('chat-strip-pct');
-      const stripClients = document.getElementById('chat-strip-clients');
-      if (stripTarget) {
-        stripTarget.innerHTML = `${formatShortLakhs(totalINR)} <span class="text-xs font-normal" style="color: var(--text-muted);">/ ${formatShortLakhs(targetINR)}</span>`;
-      }
-      if (stripPct) stripPct.textContent = `${pct}%`;
-      if (stripClients) stripClients.textContent = `${appState.deals.length} Clients`;
-
-      renderDashboard();
-    }
-
-    function setDealFilter(filter) {
-      appState.dealFilter = filter;
-      ['all', 'negotiating', 'proposal_sent', 'won'].forEach(f => {
-        const btn = document.getElementById('deal-filter-' + f);
-        if (btn) {
-          if (f === filter) btn.classList.add('active');
-          else btn.classList.remove('active');
-        }
-      });
-      renderDashboard();
-    }
-
-    function renderDashboard() {
-      const totalINR = getTotalPipelineINR();
-      const targetINR = Number(appState.targetINR) || 3500000;
-      const wonDeals = appState.deals.filter(d => d.stage === 'won');
-      const wonINR = wonDeals.reduce((s, d) => s + d.valueINR, 0);
-      const negINR = appState.deals.filter(d => d.stage === 'negotiating').reduce((s, d) => s + d.valueINR, 0);
-      const propINR = appState.deals.filter(d => d.stage === 'proposal_sent').reduce((s, d) => s + d.valueINR, 0);
-      const gapINR = Math.max(0, targetINR - totalINR);
-
-      const elTotal = document.getElementById('dash-pipeline-total');
-      const elTarget = document.getElementById('dash-target-amount');
-      const elGap = document.getElementById('dash-target-gap');
-      const legWon = document.getElementById('legend-won');
-      const legNeg = document.getElementById('legend-negotiating');
-      const legProp = document.getElementById('legend-proposal');
-
-      if (elTotal) elTotal.textContent = formatINR(totalINR);
-      if (elTarget) elTarget.textContent = formatINR(targetINR);
-      if (elGap) elGap.textContent = gapINR > 0 ? `${formatINR(gapINR)} to goal` : 'Target achieved!';
-      if (legWon) legWon.textContent = formatINR(wonINR);
-      if (legNeg) legNeg.textContent = formatINR(negINR);
-      if (legProp) legProp.textContent = formatINR(propINR);
-
-      const barWon = document.getElementById('bar-won');
-      const barNeg = document.getElementById('bar-negotiating');
-      const barProp = document.getElementById('bar-proposal');
-      const denom = Math.max(targetINR, totalINR, 1);
-      if (barWon) barWon.style.width = `${Math.round((wonINR / denom) * 100)}%`;
-      if (barNeg) barNeg.style.width = `${Math.round((negINR / denom) * 100)}%`;
-      if (barProp) barProp.style.width = `${Math.round((propINR / denom) * 100)}%`;
-
-      const kpiClients = document.getElementById('kpi-clients-count');
-      const kpiOngoing = document.getElementById('kpi-ongoing-count');
-      const kpiWonSub = document.getElementById('kpi-won-sublabel');
-      const syncLabel = document.getElementById('last-db-sync-label');
-      const outreachPill = document.getElementById('outreach-summary-pill');
-
-      const ongoingCount = appState.deals.filter(d => d.stage !== 'won').length;
-      if (kpiClients) kpiClients.textContent = String(appState.deals.length);
-      if (kpiOngoing) kpiOngoing.textContent = String(ongoingCount);
-      if (kpiWonSub) kpiWonSub.textContent = `+ ${wonDeals.length} Closed Won`;
-      if (syncLabel) syncLabel.textContent = appState.lastSyncLabel;
-      if (outreachPill) outreachPill.textContent = `${appState.deals.length} Clients Reached Out To`;
-
-      const tbody = document.getElementById('clients-outreach-tbody');
-      if (tbody) {
-        tbody.innerHTML = appState.deals.map(deal => {
-          const badgeClass = deal.outreachBadge === 'emerald'
-            ? 'badge-emerald'
-            : deal.outreachBadge === 'amber'
-            ? 'badge-amber'
-            : 'badge-gold';
-          return `
-            <tr class="hover:bg-white/[0.02] transition">
-              <td class="py-3.5 pr-4">
-                <div class="font-medium">${deal.contactName}</div>
-                <div class="text-xs" style="color: var(--text-muted);">${deal.company} · ${formatINR(deal.valueINR)}</div>
-              </td>
-              <td class="py-3.5 px-4 text-xs" style="color: var(--text-secondary);">
-                ${deal.lastReachedOut}
-              </td>
-              <td class="py-3.5 px-4">
-                <span class="${badgeClass} text-xs px-2.5 py-1 rounded-full font-medium inline-block">
-                  ${deal.outreachStatus}
-                </span>
-              </td>
-              <td class="py-3.5 pl-4 text-right">
-                <button type="button" onclick="nudgeClientInChat('${deal.id}')" class="btn-ghost px-3 py-1 rounded-full text-xs">
-                  Follow Up in Chat
-                </button>
-              </td>
-            </tr>
-          `;
-        }).join('');
-      }
-
-      const searchInput = document.getElementById('deal-search-input');
-      const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
-      const filteredDeals = appState.deals.filter(d => {
-        const matchesStage = appState.dealFilter === 'all' || d.stage === appState.dealFilter;
-        const matchesQuery = !query ||
-          d.company.toLowerCase().includes(query) ||
-          d.title.toLowerCase().includes(query) ||
-          d.contactName.toLowerCase().includes(query);
-        return matchesStage && matchesQuery;
-      });
-
-      const grid = document.getElementById('ongoing-deals-grid');
-      if (grid) {
-        if (filteredDeals.length === 0) {
-          grid.innerHTML = `
-            <div class="surface-card rounded-3xl p-8 text-center col-span-full text-sm" style="color: var(--text-muted);">
-              No deals match this filter.
+      if (p.includes('target') || p.includes('revenue') || p.includes('q4') || p.includes('goal')) {
+        responseHtml = `
+          <p>Here is your latest live revenue progress against the Q4 goal:</p>
+          <div class="bg-[#090D13] border border-[var(--border-hairline)] rounded-xl p-3.5 my-2 space-y-2">
+            <div class="flex justify-between text-xs">
+              <span class="text-[var(--text-muted)]">Q4 Goal Target</span>
+              <span class="font-bold font-mono text-[var(--emerald-glow)]">₹18,80,000 / ₹35,00,000 (53.7%)</span>
             </div>
-          `;
-        } else {
-          grid.innerHTML = filteredDeals.map(deal => {
-            const stageLabel = deal.stage === 'won'
-              ? 'Closed Won'
-              : deal.stage === 'negotiating'
-              ? 'In Negotiation'
-              : 'Proposal Sent';
-            const stageBadge = deal.stage === 'won'
-              ? 'badge-emerald'
-              : deal.stage === 'negotiating'
-              ? 'badge-gold'
-              : 'badge-amber';
-            return `
-              <div class="surface-card rounded-3xl p-5 flex flex-col justify-between gap-4 hover:border-amber-400/40">
-                <div class="space-y-2">
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-xs font-semibold uppercase tracking-wider truncate" style="color: var(--accent-primary);">
-                      ${deal.company}
-                    </span>
-                    <span class="${stageBadge} text-[11px] font-semibold px-2.5 py-0.5 rounded-full shrink-0">
-                      ${stageLabel}
-                    </span>
-                  </div>
-                  <h3 class="font-playfair text-lg font-medium leading-snug">
-                    ${deal.title}
-                  </h3>
-                  <div class="text-xs" style="color: var(--text-secondary);">
-                    Contact: <strong>${deal.contactName}</strong> · Last touch: ${deal.lastReachedOut}
-                  </div>
-                  ${deal.founderNotes ? `
-                    <div class="surface-elevated rounded-xl p-2.5 text-xs leading-relaxed" style="color: var(--text-secondary);">
-                      <span class="font-semibold" style="color: var(--text-primary);">Your Note:</span> ${deal.founderNotes}
-                    </div>
-                  ` : ''}
-                </div>
+            <div class="w-full bg-[#18212D] rounded-full h-2 overflow-hidden">
+              <div class="progress-emerald-shimmer h-full rounded-full" style="width: 53.7%"></div>
+            </div>
+            <div class="text-[11px] text-[var(--text-dim)]">Remaining: ₹16,20,000 with 6 high-probability deals in pipeline.</div>
+          </div>
+        `;
+      } else if (p.includes('deal') || p.includes('pipeline') || p.includes('client')) {
+        responseHtml = `
+          <p>You currently have <strong>6 active deals</strong> in the live pipeline totaling <strong>₹1,45,50,000</strong>:</p>
+          <ul class="list-disc list-inside space-y-1 text-xs text-[var(--text-muted)] pt-1">
+            <li><strong>Malhotra Logistics:</strong> ₹4,80,000 (Negotiating · Counter-offer ready)</li>
+            <li><strong>Iyer Textiles:</strong> ₹2,40,000 (Negotiating · Active scope review)</li>
+            <li><strong>Brightleaf Clinics:</strong> ₹3,20,000 (Proposal sent · OOO paused)</li>
+            <li><strong>Apex Supply Co:</strong> ₹5,20,000 (Negotiating · Contract in legal)</li>
+          </ul>
+        `;
+      } else if (p.includes('kill') || p.includes('stop') || p.includes('pause')) {
+        toggleKillSwitch();
+        responseHtml = `
+          <p class="text-rose-400 font-semibold">Emergency Guard Triggered:</p>
+          <p>Autonomy has been paused. No background email drafts or automated dispatch will execute until re-enabled.</p>
+        `;
+      } else {
+        responseHtml = `
+          <p>Understood. I have logged your instruction:</p>
+          <div class="p-3 rounded-xl bg-[#090D13] border border-[var(--border-hairline)] text-xs text-[var(--emerald-glow)] font-mono">
+            Command processed: "${escapeHtml(prompt)}"
+          </div>
+          <p class="text-xs text-[var(--text-muted)]">I am evaluating your deals, calendar slots, and guardrail constraints autonomously in the background.</p>
+        `;
+      }
 
-                <div class="flex items-center justify-between pt-3 border-t" style="border-color: var(--border-hairline);">
-                  <div class="font-playfair text-xl font-semibold">
-                    ${formatINR(deal.valueINR)}
-                  </div>
-                  <div class="flex items-center gap-1.5">
-                    <button type="button" onclick="openEditDealModal('${deal.id}')" class="btn-ghost px-3 py-1 rounded-full text-xs">
-                      Edit
-                    </button>
-                    <button type="button" onclick="nudgeClientInChat('${deal.id}')" class="btn-ghost px-3 py-1 rounded-full text-xs">
-                      Ask CS
-                    </button>
-                  </div>
-                </div>
-              </div>
+      const el = document.createElement('div');
+      el.className = 'flex items-start gap-3.5 max-w-2xl';
+      el.innerHTML = `
+        <div class="w-8 h-8 rounded-full bg-[#0B2117] border border-[var(--emerald-primary)]/40 flex items-center justify-center shrink-0 mt-0.5 glow-emerald-sm">
+          <svg class="w-4 h-4 text-[var(--emerald-glow)]" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0L14.6 9.4L24 12L14.6 14.6L12 24L9.4 14.6L0 12L9.4 9.4L12 0Z"/>
+          </svg>
+        </div>
+        <div class="flex-1 bg-[var(--bg-ai-bubble)] border border-[var(--border-subtle)] rounded-2xl rounded-tl-sm p-4 text-xs sm:text-sm text-[var(--text-main)] space-y-2 shadow-lg">
+          ${responseHtml}
+          <div class="text-[10px] text-[var(--text-dim)] text-right pt-1 font-mono">${timeStr}</div>
+        </div>
+      `;
+      container.appendChild(el);
+      scrollChatToBottom();
+      lucide.createIcons();
+    }
+
+    function scrollChatToBottom() {
+      const container = document.getElementById('chat-messages-container');
+      if (container) {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+      }
+    }
+
+    function focusChatInput() {
+      const input = document.getElementById('chat-input');
+      if (input) input.focus();
+    }
+
+    // ----------------------------------------------------------------
+    // Raju 1-Tap Approval & Undo Countdown
+    // ----------------------------------------------------------------
+    function approveRajuProposal() {
+      const controls = document.getElementById('raju-action-controls');
+      const banner = document.getElementById('raju-undo-banner');
+      if (controls) controls.classList.add('hidden');
+      if (banner) banner.classList.remove('hidden');
+
+      let seconds = 15;
+      const countEl = document.getElementById('undo-countdown-num');
+      if (state.undoTimer) clearInterval(state.undoTimer);
+
+      state.undoTimer = setInterval(() => {
+        seconds--;
+        if (countEl) countEl.innerText = `${seconds}s`;
+        if (seconds <= 0) {
+          clearInterval(state.undoTimer);
+          if (banner) {
+            banner.innerHTML = `
+              <span class="text-[var(--emerald-glow)] font-semibold flex items-center gap-1.5">
+                <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+                Dispatched to Raju via Gmail (Google Msg ID: gmail_msg_5691ad78)
+              </span>
             `;
-          }).join('');
+            lucide.createIcons();
+          }
         }
+      }, 1000);
+    }
+
+    function cancelRajuApproval() {
+      if (state.undoTimer) clearInterval(state.undoTimer);
+      const controls = document.getElementById('raju-action-controls');
+      const banner = document.getElementById('raju-undo-banner');
+      if (controls) controls.classList.remove('hidden');
+      if (banner) banner.classList.add('hidden');
+    }
+
+    function rejectRajuProposal() {
+      const card = document.getElementById('card-raju-decision');
+      if (card) {
+        card.innerHTML = `
+          <div class="text-xs text-rose-300 font-medium">Proposal marked for manual customization. Chief of Staff paused outbound dispatch for Raju Malhotra.</div>
+        `;
       }
     }
 
-    function toggleTargetEditor() {
-      const box = document.getElementById('target-inline-editor');
-      const input = document.getElementById('target-input-inr');
-      if (!box) return;
-      box.classList.toggle('hidden');
-      if (input) input.value = String(appState.targetINR);
-    }
+    // ----------------------------------------------------------------
+    // Kill Switch Toggle
+    // ----------------------------------------------------------------
+    function toggleKillSwitch() {
+      state.killSwitchEngaged = !state.killSwitchEngaged;
+      const sideDot = document.getElementById('sidebar-autonomy-dot');
+      const sideText = document.getElementById('sidebar-autonomy-text');
+      const sideBtn = document.getElementById('sidebar-kill-btn');
+      const setBtn = document.getElementById('settings-kill-btn');
 
-    function saveNewTarget() {
-      const input = document.getElementById('target-input-inr');
-      if (!input) return;
-      const val = Number(input.value);
-      if (val >= 100000) {
-        appState.targetINR = val;
-        renderAllSummaries();
-        persistState();
-        toggleTargetEditor();
-        showToast(`Quarterly target updated to ${formatINR(val)}`);
-      }
-    }
-
-    function nudgeClientInChat(dealId) {
-      const deal = appState.deals.find(d => d.id === dealId);
-      if (!deal) return;
-      switchView('chat');
-      sendQuickPrompt(`Draft a warm follow-up for ${deal.contactName} at ${deal.company} regarding ${deal.title}`);
-    }
-
-    // =========================================================================
-    // DEAL ADD / EDIT MODAL
-    // =========================================================================
-    function openNewDealModal() {
-      const modal = document.getElementById('deal-modal');
-      const title = document.getElementById('deal-modal-title');
-      if (title) title.textContent = 'Add Ongoing Deal';
-      document.getElementById('deal-modal-id').value = '';
-      document.getElementById('deal-modal-company').value = '';
-      document.getElementById('deal-modal-name').value = '';
-      document.getElementById('deal-modal-contact').value = '';
-      document.getElementById('deal-modal-email').value = '';
-      document.getElementById('deal-modal-value').value = '';
-      document.getElementById('deal-modal-stage').value = 'proposal_sent';
-      document.getElementById('deal-modal-notes').value = '';
-      if (modal) modal.classList.remove('hidden');
-    }
-
-    function openEditDealModal(dealId) {
-      const deal = appState.deals.find(d => d.id === dealId);
-      if (!deal) return;
-      const modal = document.getElementById('deal-modal');
-      const title = document.getElementById('deal-modal-title');
-      if (title) title.textContent = `Edit Deal · ${deal.company}`;
-      document.getElementById('deal-modal-id').value = deal.id;
-      document.getElementById('deal-modal-company').value = deal.company;
-      document.getElementById('deal-modal-name').value = deal.title;
-      document.getElementById('deal-modal-contact').value = deal.contactName;
-      document.getElementById('deal-modal-email').value = deal.contactEmail || '';
-      document.getElementById('deal-modal-value').value = String(deal.valueINR);
-      document.getElementById('deal-modal-stage').value = deal.stage;
-      document.getElementById('deal-modal-notes').value = deal.founderNotes || '';
-      if (modal) modal.classList.remove('hidden');
-    }
-
-    function closeDealModal() {
-      const modal = document.getElementById('deal-modal');
-      if (modal) modal.classList.add('hidden');
-    }
-
-    function saveDealModal(e) {
-      e.preventDefault();
-      const id = document.getElementById('deal-modal-id').value;
-      const company = document.getElementById('deal-modal-company').value.trim();
-      const title = document.getElementById('deal-modal-name').value.trim();
-      const contactName = document.getElementById('deal-modal-contact').value.trim();
-      const contactEmail = document.getElementById('deal-modal-email').value.trim();
-      const valueINR = Number(document.getElementById('deal-modal-value').value) || 0;
-      const stage = document.getElementById('deal-modal-stage').value;
-      const founderNotes = document.getElementById('deal-modal-notes').value.trim();
-
-      if (id) {
-        const existing = appState.deals.find(d => d.id === id);
-        if (existing) {
-          existing.company = company;
-          existing.title = title;
-          existing.contactName = contactName;
-          existing.contactEmail = contactEmail;
-          existing.valueINR = valueINR;
-          existing.stage = stage;
-          existing.founderNotes = founderNotes;
-          existing.outreachStatus = stage === 'won' ? 'Closed Won · Updated by Founder' : existing.outreachStatus;
-          existing.outreachBadge = stage === 'won' ? 'emerald' : existing.outreachBadge;
+      if (state.killSwitchEngaged) {
+        if (sideDot) sideDot.className = 'w-2 h-2 rounded-full bg-rose-500 animate-pulse';
+        if (sideText) sideText.innerText = 'Kill switch engaged (Paused)';
+        if (sideBtn) {
+          sideBtn.innerText = 'Resume';
+          sideBtn.className = 'px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
         }
-        showToast(`Updated ${company} in database`);
+        if (setBtn) {
+          setBtn.innerText = 'Disengage Kill Switch (Resume)';
+          setBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-black';
+        }
       } else {
-        smartMergeRecords([
-          {
-            company,
-            title,
-            contactName,
-            contactEmail,
-            stage,
-            valueINR,
-            lastReachedOut: 'Just now',
-            outreachStatus: stage === 'won' ? 'Closed Won' : 'Proposal queued by Chief of Staff',
-            outreachBadge: stage === 'won' ? 'emerald' : 'gold',
-            founderNotes
-          }
-        ], 'smart');
-        showToast(`Saved ${company} (${formatINR(valueINR)}) to database`);
-      }
-
-      closeDealModal();
-      renderAllSummaries();
-      persistState();
-    }
-
-    // =========================================================================
-    // PROFILE & SETTINGS HANDLERS
-    // =========================================================================
-    function saveProfileChanges(e) {
-      e.preventDefault();
-      appState.founder.name = document.getElementById('prof-name').value.trim() || 'Meera Nair';
-      appState.founder.signature = document.getElementById('prof-signature').value.trim() || 'Meera';
-      appState.founder.businessName = document.getElementById('prof-business').value.trim() || 'Nair Automation Studio';
-      appState.founder.email = document.getElementById('prof-email').value.trim() || 'meera@nairstudio.in';
-      appState.founder.timezone = document.getElementById('prof-timezone').value;
-      appState.founder.services = document.getElementById('prof-services').value.trim();
-
-      renderAllSummaries();
-      persistState();
-      showToast('Founder profile & studio preferences saved');
-    }
-
-    function updateSettingsPreview() {
-      const slider = document.getElementById('setting-discount-slider');
-      const badge = document.getElementById('setting-discount-badge');
-      const inline = document.getElementById('setting-discount-inline');
-      const quietSelect = document.getElementById('setting-quiet-days');
-      const undoSelect = document.getElementById('setting-undo-seconds');
-
-      if (slider) {
-        const val = Number(slider.value);
-        appState.settings.maxDiscountPct = val;
-        if (badge) badge.textContent = `Up to ${val}%`;
-        if (inline) inline.textContent = `${val}%`;
-      }
-      if (quietSelect) appState.settings.quietDaysThreshold = Number(quietSelect.value);
-      if (undoSelect) appState.settings.undoWindowSeconds = Number(undoSelect.value);
-
-      renderAllSummaries();
-      persistState();
-    }
-
-    function toggleAutonomyPause() {
-      appState.settings.autonomyPaused = !appState.settings.autonomyPaused;
-      const btn = document.getElementById('pause-autonomy-btn');
-      const dot = document.getElementById('autonomy-status-dot');
-      const label = document.getElementById('autonomy-status-label');
-
-      if (appState.settings.autonomyPaused) {
-        if (btn) {
-          btn.textContent = 'Paused (Click to Resume)';
-          btn.className = 'px-4 py-2 rounded-full text-xs font-semibold shrink-0 badge-amber';
+        if (sideDot) sideDot.className = 'w-2 h-2 rounded-full bg-[var(--emerald-glow)] animate-pulse';
+        if (sideText) sideText.innerText = 'Auto-pilot active';
+        if (sideBtn) {
+          sideBtn.innerText = 'Kill Switch';
+          sideBtn.className = 'px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30';
         }
-        if (dot) dot.style.backgroundColor = 'var(--status-amber)';
-        if (label) label.textContent = 'Automatic outreach paused';
-        showToast('Automatic outreach paused — draft-only mode active');
-      } else {
-        if (btn) {
-          btn.textContent = 'Active (Click to Pause)';
-          btn.className = 'px-4 py-2 rounded-full text-xs font-semibold shrink-0 badge-emerald';
+        if (setBtn) {
+          setBtn.innerText = 'Engage Kill Switch';
+          setBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white';
         }
-        if (dot) dot.style.backgroundColor = 'var(--status-emerald)';
-        if (label) label.textContent = 'Chief of Staff working quietly';
-        showToast('Automatic outreach resumed');
-      }
-      persistState();
-    }
-
-    function resetDemoDatabase() {
-      const currentTheme = appState.theme;
-      appState = JSON.parse(JSON.stringify(INITIAL_STATE));
-      appState.theme = currentTheme;
-      persistState();
-      renderAllSummaries();
-      showToast('Database reset to original Nair Studio seed records');
-    }
-
-    // =========================================================================
-    // SMART NON-DESTRUCTIVE DATABASE MERGE ENGINE (EXCEL .XLSX/.XLS, .CSV, .JSON)
-    // =========================================================================
-    function setMergeMode(mode) {
-      appState.mergeMode = mode;
-      ['smart', 'append', 'replace'].forEach(m => {
-        const btn = document.getElementById('merge-mode-' + m);
-        if (btn) {
-          if (m === mode) btn.classList.add('active');
-          else btn.classList.remove('active');
-        }
-      });
-      if (stagedImportRecords) {
-        renderStagedPreview();
       }
     }
 
-    function findMatchingDeal(existingDeals, incoming) {
-      return existingDeals.find(d => {
-        if (incoming.id && d.id && String(d.id).toLowerCase() === String(incoming.id).toLowerCase()) {
-          return true;
-        }
-        if (incoming.contactEmail && d.contactEmail &&
-            String(d.contactEmail).toLowerCase() === String(incoming.contactEmail).toLowerCase()) {
-          return true;
-        }
-        if (incoming.company && d.company &&
-            String(d.company).toLowerCase() === String(incoming.company).toLowerCase()) {
-          return true;
-        }
-        if (incoming.contactName && d.contactName &&
-            String(d.contactName).toLowerCase() === String(incoming.contactName).toLowerCase()) {
-          return true;
-        }
-        return false;
-      });
+    function updateDiscountThreshold(val) {
+      state.maxDiscount = Number(val);
+      const label = document.getElementById('discount-val-label');
+      if (label) label.innerText = `${val}%`;
     }
 
-    function smartMergeRecords(incomingRecords, mode) {
-      const strategy = mode || appState.mergeMode || 'smart';
-      let addedCount = 0;
-      let updatedCount = 0;
+    // ----------------------------------------------------------------
+    // Deals Renderer
+    // ----------------------------------------------------------------
+    function renderDeals() {
+      const grid = document.getElementById('deals-cards-grid');
+      if (!grid) return;
+      grid.innerHTML = state.deals.map(d => `
+        <div class="interactive-card bg-[var(--bg-surface)] border border-[var(--border-hairline)] rounded-2xl p-4 flex flex-col justify-between space-y-3">
+          <div>
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <h4 class="text-sm font-bold text-white">${escapeHtml(d.company)}</h4>
+                <div class="text-[11px] text-[var(--text-muted)]">${escapeHtml(d.title)}</div>
+              </div>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
+                d.stage === 'won' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' :
+                d.stage === 'negotiating' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' :
+                'bg-sky-500/15 text-sky-400 border border-sky-500/30'
+              }">${d.stage}</span>
+            </div>
+            
+            <div class="mt-3 p-2.5 rounded-xl bg-[#090D13] border border-[var(--border-hairline)] text-xs space-y-1">
+              <div class="flex justify-between">
+                <span class="text-[var(--text-dim)]">Contact:</span>
+                <span class="text-white font-medium">${escapeHtml(d.contactName)}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-[var(--text-dim)]">Value:</span>
+                <span class="font-mono font-bold text-[var(--emerald-glow)]">₹${(d.valueINR).toLocaleString('en-IN')}</span>
+              </div>
+            </div>
 
-      if (strategy === 'replace') {
-        appState.deals = incomingRecords.map((rec, idx) => ({
-          id: rec.id || `D-${idx + 1}`,
-          company: rec.company || `Client ${idx + 1}`,
-          title: rec.title || 'Automation & Workflow Rollout',
-          contactName: rec.contactName || 'Decision Maker',
-          contactEmail: rec.contactEmail || 'contact@client.in',
-          stage: rec.stage || 'negotiating',
-          valueINR: Number(rec.valueINR) || 250000,
-          lastReachedOut: rec.lastReachedOut || 'Synced today',
-          outreachStatus: rec.outreachStatus || 'Synced from file',
-          outreachBadge: (rec.stage === 'won') ? 'emerald' : 'gold',
-          founderNotes: rec.founderNotes || ''
-        }));
-        addedCount = appState.deals.length;
-        return { addedCount, updatedCount };
-      }
+            <p class="text-[11px] text-[var(--text-muted)] mt-2.5 leading-relaxed">${escapeHtml(d.outreachStatus)}</p>
+          </div>
 
-      incomingRecords.forEach((incoming, idx) => {
-        const match = strategy === 'smart' ? findMatchingDeal(appState.deals, incoming) : null;
-        if (match) {
-          // Non-destructive field-by-field merge: only update fields explicitly provided in the file
-          if (incoming.company) match.company = incoming.company;
-          if (incoming.title) match.title = incoming.title;
-          if (incoming.contactName) match.contactName = incoming.contactName;
-          if (incoming.contactEmail) match.contactEmail = incoming.contactEmail;
-          if (incoming.stage) match.stage = incoming.stage;
-          if (typeof incoming.valueINR === 'number' && !isNaN(incoming.valueINR) && incoming.valueINR > 0) {
-            match.valueINR = incoming.valueINR;
-          }
-          if (incoming.lastReachedOut) match.lastReachedOut = incoming.lastReachedOut;
-          if (incoming.outreachStatus) match.outreachStatus = incoming.outreachStatus;
-          if (incoming.outreachBadge) match.outreachBadge = incoming.outreachBadge;
-          else if (match.stage === 'won') match.outreachBadge = 'emerald';
-          if (incoming.founderNotes) match.founderNotes = incoming.founderNotes;
-          updatedCount += 1;
-        } else {
-          const newDeal = {
-            id: incoming.id || `D-${appState.deals.length + 1 + idx}`,
-            company: incoming.company || `Imported Client ${idx + 1}`,
-            title: incoming.title || 'Automation & Workflow Rollout',
-            contactName: incoming.contactName || 'Decision Maker',
-            contactEmail: incoming.contactEmail || 'contact@client.in',
-            stage: incoming.stage || 'negotiating',
-            valueINR: (typeof incoming.valueINR === 'number' && incoming.valueINR > 0) ? incoming.valueINR : 250000,
-            lastReachedOut: incoming.lastReachedOut || 'Synced today',
-            outreachStatus: incoming.outreachStatus || 'Synced from uploaded file · Active',
-            outreachBadge: incoming.stage === 'won' ? 'emerald' : 'gold',
-            founderNotes: incoming.founderNotes || ''
-          };
-          appState.deals.unshift(newDeal);
-          addedCount += 1;
-        }
-      });
-
-      return { addedCount, updatedCount };
+          <div class="pt-2 border-t border-[var(--border-hairline)] flex items-center justify-between text-[10px] text-[var(--text-dim)]">
+            <span>Last contact: ${escapeHtml(d.lastReachedOut)}</span>
+            <button onclick="promptActionForDeal('${d.id}')" class="text-[var(--emerald-glow)] hover:underline font-semibold">Open in Chat →</button>
+          </div>
+        </div>
+      `).join('');
+      lucide.createIcons();
     }
 
-    function openUploadModal() {
-      const modal = document.getElementById('upload-modal');
-      const preview = document.getElementById('upload-preview-box');
-      if (preview) preview.classList.add('hidden');
-      stagedImportRecords = null;
-      if (modal) modal.classList.remove('hidden');
-      if (window.lucide) window.lucide.createIcons();
-    }
-
-    function closeUploadModal() {
-      const modal = document.getElementById('upload-modal');
-      if (modal) modal.classList.add('hidden');
-    }
-
-    function handleDragOver(e) {
-      e.preventDefault();
-      const dz = document.getElementById('upload-dropzone');
-      if (dz) dz.style.borderColor = 'var(--accent-primary)';
-    }
-
-    function handleDragLeave(e) {
-      e.preventDefault();
-      const dz = document.getElementById('upload-dropzone');
-      if (dz) dz.style.borderColor = 'var(--border-strong)';
-    }
-
-    function handleFileDrop(e) {
-      e.preventDefault();
-      handleDragLeave(e);
-      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        parseUploadedFile(e.dataTransfer.files[0]);
+    function promptActionForDeal(dealId) {
+      const deal = state.deals.find(d => d.id === dealId);
+      if (!deal) return;
+      switchMainTab('chat');
+      const input = document.getElementById('chat-input');
+      if (input) {
+        input.value = `Review deal ${deal.id} for ${deal.company} (${deal.contactName})`;
+        input.focus();
       }
     }
 
-    function handleFileSelect(e) {
-      if (e.target && e.target.files && e.target.files.length > 0) {
-        parseUploadedFile(e.target.files[0]);
-      }
-    }
+    // ----------------------------------------------------------------
+    // Live Multi-Format File Ingestion (Excel / CSV / JSON)
+    // ----------------------------------------------------------------
+    function handleFileUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
 
-    function parseUploadedFile(file) {
-      const name = file.name || 'uploaded_data';
-      const lower = name.toLowerCase();
+      const reader = new FileReader();
+      const ext = file.name.split('.').pop().toLowerCase();
 
-      if (lower.endsWith('.json')) {
-        const reader = new FileReader();
-        reader.onload = function(evt) {
-          try {
-            const parsed = JSON.parse(evt.target.result);
-            stageNormalizedData(name, parsed);
-          } catch (err) {
-            showToast('Could not parse JSON file — please check syntax');
-          }
-        };
-        reader.readAsText(file);
-      } else if (lower.endsWith('.csv') || lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
-        const reader = new FileReader();
-        reader.onload = function(evt) {
-          try {
-            if (window.XLSX) {
-              const data = new Uint8Array(evt.target.result);
-              const workbook = window.XLSX.read(data, { type: 'array' });
-              // Read and combine rows across ALL sheets in the Excel workbook
-              let allRows = [];
-              workbook.SheetNames.forEach(sheetName => {
-                const sheetRows = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
-                if (Array.isArray(sheetRows)) {
-                  allRows = allRows.concat(sheetRows);
-                }
-              });
-              stageNormalizedData(name, allRows);
+      reader.onload = function(evt) {
+        try {
+          let imported = 0;
+          if (ext === 'xlsx' || ext === 'xls') {
+            const data = new Uint8Array(evt.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonRows = XLSX.utils.sheet_to_json(firstSheet);
+            imported = mergeImportedData(jsonRows, file.name);
+          } else if (ext === 'csv' || ext === 'json' || ext === 'txt') {
+            const text = evt.target.result;
+            if (ext === 'json') {
+              const parsed = JSON.parse(text);
+              imported = mergeImportedData(Array.isArray(parsed) ? parsed : [parsed], file.name);
             } else {
-              const text = new TextDecoder().decode(evt.target.result);
-              const rows = parseSimpleCSV(text);
-              stageNormalizedData(name, rows);
+              // CSV Simple Split
+              const lines = text.split('\n').filter(l => l.trim().length > 0);
+              const rows = lines.slice(1).map(line => {
+                const parts = line.split(',');
+                return {
+                  company: parts[0]?.trim(),
+                  title: parts[1]?.trim(),
+                  contactName: parts[2]?.trim(),
+                  contactEmail: parts[3]?.trim(),
+                  valueINR: parts[4] ? Number(parts[4].replace(/[^0-9]/g, '')) : 300000
+                };
+              });
+              imported = mergeImportedData(rows, file.name);
             }
-          } catch (err) {
-            showToast('Could not read spreadsheet — please verify format');
           }
-        };
-        reader.readAsArrayBuffer(file);
-      } else {
-        showToast('Please upload an .xlsx, .xls, .csv, or .json file');
-      }
-    }
 
-    function parseSimpleCSV(text) {
-      const lines = text.split(/\r?\n/).filter(l => l.trim());
-      if (lines.length < 2) return [];
-      const headers = lines[0].split(',').map(h => h.trim());
-      return lines.slice(1).map(line => {
-        const cols = line.split(',').map(c => c.trim());
-        const obj = {};
-        headers.forEach((h, i) => { obj[h] = cols[i] || ''; });
-        return obj;
-      });
-    }
-
-    function stageNormalizedData(filename, rawPayload) {
-      let rows = [];
-      let newTarget = null;
-
-      if (Array.isArray(rawPayload)) {
-        rows = rawPayload;
-      } else if (rawPayload && typeof rawPayload === 'object') {
-        if (rawPayload.targetINR || rawPayload.target) {
-          newTarget = Number(rawPayload.targetINR || rawPayload.target);
+          switchMainTab('chat');
+          appendAssistantNotification(`✓ Successfully synced ${imported} record(s) from "${file.name}" into your live database.`);
+          renderDeals();
+        } catch (err) {
+          alert('Could not parse file. Supported formats: .xlsx, .xls, .csv, .json');
         }
-        if (Array.isArray(rawPayload.deals)) rows = rawPayload.deals;
-        else if (Array.isArray(rawPayload.clients)) rows = rawPayload.clients;
-        else if (Array.isArray(rawPayload.records)) rows = rawPayload.records;
-        else rows = [rawPayload];
-      }
-
-      const normalizedDeals = [];
-      rows.forEach((r) => {
-        if (!r || typeof r !== 'object') return;
-        if ((r.targetINR || r.Target || r.target) && !r.company && !r.Company && !r.client && !r.Client) {
-          newTarget = Number(String(r.targetINR || r.Target || r.target).replace(/[^0-9.]/g, ''));
-          return;
-        }
-        const id = r.id || r.ID || r.ref || r.deal_ref || undefined;
-        const company = r.company || r.Company || r.client || r.Client || r.account || undefined;
-        const title = r.title || r.Title || r.deal || r.Deal || r.project || undefined;
-        const contactName = r.contact_name || r.contactName || r.Contact || r.contact || undefined;
-        const contactEmail = r.contact_email || r.contactEmail || r.Email || r.email || undefined;
-        const rawVal = r.valueINR !== undefined ? r.valueINR : (r.value !== undefined ? r.value : (r.Value !== undefined ? r.Value : (r.amount !== undefined ? r.amount : r.Amount)));
-        const cleanVal = rawVal !== undefined && rawVal !== '' ? Number(String(rawVal).replace(/[^0-9.]/g, '')) : undefined;
-        const rawStage = r.stage || r.Stage || r.status || r.Status;
-        let stage = undefined;
-        if (rawStage) {
-          const s = String(rawStage).toLowerCase();
-          stage = s.includes('won') ? 'won' : s.includes('prop') ? 'proposal_sent' : 'negotiating';
-        }
-        const outreachStatus = r.outreachStatus || r.outreach || r.Outreach || undefined;
-        const lastReachedOut = r.lastReachedOut || r.last_reached_out || 'Synced today';
-        const founderNotes = r.founderNotes || r.notes || r.Notes || undefined;
-
-        normalizedDeals.push({
-          id: id ? String(id) : undefined,
-          company: company ? String(company) : undefined,
-          title: title ? String(title) : undefined,
-          contactName: contactName ? String(contactName) : undefined,
-          contactEmail: contactEmail ? String(contactEmail) : undefined,
-          stage,
-          valueINR: cleanVal,
-          lastReachedOut: String(lastReachedOut),
-          outreachStatus: outreachStatus ? String(outreachStatus) : undefined,
-          founderNotes: founderNotes ? String(founderNotes) : undefined
-        });
-      });
-
-      stagedImportRecords = {
-        filename,
-        deals: normalizedDeals,
-        newTarget
       };
 
-      renderStagedPreview();
-    }
-
-    function renderStagedPreview() {
-      if (!stagedImportRecords) return;
-      const { filename, deals, newTarget } = stagedImportRecords;
-      const mode = appState.mergeMode || 'smart';
-
-      let willAdd = 0;
-      let willUpdate = 0;
-      const previewLines = [];
-
-      deals.forEach((d, idx) => {
-        const match = mode === 'smart' ? findMatchingDeal(appState.deals, d) : null;
-        const displayName = d.company || (match && match.company) || d.contactName || `Record ${idx + 1}`;
-        const displayVal = d.valueINR || (match && match.valueINR) || 250000;
-        if (match) {
-          willUpdate += 1;
-          previewLines.push(`<div>↻ <strong>Update existing:</strong> ${displayName} (${formatINR(displayVal)}) — <em>preserves existing fields</em></div>`);
-        } else {
-          willAdd += 1;
-          previewLines.push(`<div>＋ <strong>Add new:</strong> ${displayName} (${formatINR(displayVal)})</div>`);
-        }
-      });
-
-      const previewBox = document.getElementById('upload-preview-box');
-      const previewBadge = document.getElementById('upload-preview-badge');
-      const previewFile = document.getElementById('upload-preview-filename');
-      const previewSum = document.getElementById('upload-preview-summary');
-
-      if (previewBadge) {
-        previewBadge.textContent = mode === 'replace'
-          ? `Replace Mode · ${deals.length} Record(s)`
-          : `${willAdd} New · ${willUpdate} Updated · 0 Merge Conflicts`;
-      }
-      if (previewFile) previewFile.textContent = filename;
-      if (previewSum) {
-        previewSum.innerHTML =
-          previewLines.slice(0, 4).join('') +
-          (newTarget ? `<div class="pt-1">🎯 <strong>Revenue Target Update:</strong> ${formatINR(newTarget)}</div>` : '');
-      }
-      if (previewBox) previewBox.classList.remove('hidden');
-    }
-
-    function simulateSampleImport(kind) {
-      if (kind === 'excel_q4') {
-        stageNormalizedData('Q4_Deals_And_Kestrel_Update.xlsx', [
-          {
-            Company: 'Kestrel Foods',
-            Contact: 'Arjun Mehta',
-            Stage: 'negotiating',
-            Outreach: 'Replied via WhatsApp · Wants Friday 4 PM walkthrough',
-            Value: 220000
-          },
-          {
-            Company: 'Godrej Consumer Logistics',
-            Deal: 'Multi-depot WhatsApp Dispatch Sync',
-            Contact: 'Rohan Kulkarni',
-            Email: 'rohan@godrej-logistics.in',
-            Value: 640000,
-            Stage: 'negotiating',
-            Outreach: 'Reached out today · Demo booked for Friday',
-            Notes: 'High-priority enterprise rollout across 4 Mumbai hubs.'
-          },
-          {
-            Company: 'Fabindia Supply Chain',
-            Deal: 'Artisan PO & Zoho Books Reconciliation',
-            Contact: 'Nandini Sen',
-            Email: 'nandini@fabindia-ops.in',
-            Value: 520000,
-            Stage: 'proposal_sent',
-            Outreach: 'Proposal sent · CFO reviewing pricing',
-            Notes: 'Standard 50/50 payment terms.'
-          }
-        ]);
+      if (ext === 'xlsx' || ext === 'xls') {
+        reader.readAsArrayBuffer(file);
       } else {
-        stageNormalizedData('Client_Outreach_Sync.json', {
-          targetINR: 4000000,
-          deals: [
-            {
-              id: 'D-2',
-              company: 'Iyer Textiles',
-              outreachStatus: 'CFO Lakshmi Iyer approved scope · Contract sent',
-              lastReachedOut: '10 mins ago'
-            },
-            {
-              company: 'Apollo Diagnostics Group',
-              title: 'Patient WhatsApp Lab Report Concierge',
-              contactName: 'Dr. Siddharth Menon',
-              contactEmail: 'smenon@apollodiag.in',
-              valueINR: 750000,
-              stage: 'negotiating',
-              lastReachedOut: '2 hours ago',
-              outreachStatus: 'Replied · Requested security & SLA annexure',
-              founderNotes: 'Target ₹40L updated via JSON sync.'
-            }
-          ]
+        reader.readAsText(file);
+      }
+    }
+
+    function mergeImportedData(rows, filename) {
+      let count = 0;
+      rows.forEach((row, idx) => {
+        if (!row.company && !row.contactName) return;
+        count++;
+        state.deals.unshift({
+          id: `IMP-${Date.now()}-${idx}`,
+          company: row.company || row['Company Name'] || `Client ${state.deals.length + 1}`,
+          title: row.title || row['Deal Title'] || 'Workflow Automation',
+          contactName: row.contactName || row['Contact Name'] || 'Decision Maker',
+          contactEmail: row.contactEmail || row['Email'] || 'client@contact.in',
+          stage: 'negotiating',
+          valueINR: Number(row.valueINR || row['Value'] || 350000),
+          outreachStatus: `Imported from ${filename}`,
+          lastReachedOut: 'Just now'
         });
-      }
+      });
+      const badge = document.getElementById('deals-count-badge');
+      if (badge) badge.innerText = state.deals.length;
+      return count;
     }
 
-    function confirmStagedImport() {
-      if (!stagedImportRecords) return;
-      const { filename, deals, newTarget } = stagedImportRecords;
-
-      if (newTarget && newTarget >= 100000) {
-        appState.targetINR = newTarget;
-      }
-
-      const { addedCount, updatedCount } = smartMergeRecords(deals, appState.mergeMode);
-
-      appState.lastSyncLabel = `Merged "${filename}" (${addedCount} new, ${updatedCount} updated)`;
-      renderAllSummaries();
-      persistState();
-      closeUploadModal();
-
-      appendChatMessage(
-        'assistant',
-        `📂 <strong>Smart Merge Complete (${filename}):</strong> Added <strong>${addedCount} new record(s)</strong> and updated <strong>${updatedCount} existing client(s)</strong> with zero conflicts. Your live pipeline now tracks <strong>${appState.deals.length} clients</strong> totaling <strong>${formatINR(getTotalPipelineINR())}</strong>.`
-      );
-      showToast(`Merged ${filename}: ${addedCount} added, ${updatedCount} updated`);
+    function appendAssistantNotification(msg) {
+      const container = document.getElementById('dynamic-messages');
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const el = document.createElement('div');
+      el.className = 'flex items-start gap-3.5 max-w-2xl';
+      el.innerHTML = `
+        <div class="w-8 h-8 rounded-full bg-[#0B2117] border border-[var(--emerald-primary)]/40 flex items-center justify-center shrink-0 mt-0.5 glow-emerald-sm">
+          <svg class="w-4 h-4 text-[var(--emerald-glow)]" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0L14.6 9.4L24 12L14.6 14.6L12 24L9.4 14.6L0 12L9.4 9.4L12 0Z"/>
+          </svg>
+        </div>
+        <div class="flex-1 bg-[var(--bg-ai-bubble)] border border-[var(--border-subtle)] rounded-2xl rounded-tl-sm p-4 text-xs sm:text-sm text-[var(--emerald-glow)] font-mono shadow-lg">
+          ${escapeHtml(msg)}
+          <div class="text-[10px] text-[var(--text-dim)] text-right pt-1 font-mono">${timeStr}</div>
+        </div>
+      `;
+      container.appendChild(el);
+      scrollChatToBottom();
     }
 
-    function downloadSampleExcelTemplate() {
-      const sampleRows = [
-        {
-          ID: 'D-4',
-          Company: 'Kestrel Foods',
-          Deal: 'Inventory sync automation',
-          Contact: 'Arjun Mehta',
-          Email: 'arjun@kestrelfoods.in',
-          Value: 180000,
-          Stage: 'negotiating',
-          Outreach: 'Confirmed call for tomorrow',
-          Notes: 'Updates existing D-4 record without conflicts'
-        },
-        {
-          ID: 'D-7',
-          Company: 'BlueTokai Roasters',
-          Deal: 'B2B Café WhatsApp Order Bot',
-          Contact: 'Matt Chitharanjan',
-          Email: 'matt@bluetokai.in',
-          Value: 380000,
-          Stage: 'negotiating',
-          Outreach: 'Reached out yesterday · Interested in Shopify sync',
-          Notes: 'Bundle with Annual Support'
-        }
-      ];
-      if (window.XLSX) {
-        const ws = window.XLSX.utils.json_to_sheet(sampleRows);
-        const wb = window.XLSX.utils.book_new();
-        window.XLSX.utils.book_append_sheet(wb, ws, 'Deals_And_Outreach');
-        window.XLSX.writeFile(wb, 'Chief_of_Staff_Smart_Merge_Template.xlsx');
-        showToast('Downloaded Excel template (.xlsx)');
-      } else {
-        exportDatabaseJSON();
-      }
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
     }
-
-    function exportDatabaseJSON() {
-      const payload = JSON.stringify(
-        {
-          exportedAt: new Date().toISOString(),
-          founder: appState.founder,
-          targetINR: appState.targetINR,
-          deals: appState.deals
-        },
-        null,
-        2
-      );
-      const blob = new Blob([payload], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'nair_studio_chief_of_staff_db.json';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      showToast('Exported current database as JSON');
-    }
-
-    window.addEventListener('DOMContentLoaded', () => {
-      applyTheme();
-      renderAllSummaries();
-      if (window.lucide) window.lucide.createIcons();
-    });
   </script>
 </body>
 </html>

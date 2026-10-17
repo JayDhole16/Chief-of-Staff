@@ -1,4 +1,4 @@
-/* Global styles: mobile-first, 390px default width */
+/* Chief of Staff — Cyber Emerald Global Design System */
 
 * {
   margin: 0;
@@ -6,68 +6,107 @@
   box-sizing: border-box;
 }
 
-html,
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
-    'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background: #f9fafb;
-  color: #111827;
+:root {
+  --bg-void: #07090C;
+  --bg-rail: #050709;
+  --bg-sidebar: #0A0D12;
+  --bg-console: #080B0F;
+  --bg-surface: #10141C;
+  --bg-elevated: #151A24;
+  --bg-user-bubble: #082919;
+  --bg-ai-bubble: #0E131B;
+  
+  --border-hairline: rgba(255, 255, 255, 0.07);
+  --border-subtle: rgba(255, 255, 255, 0.12);
+  --border-emerald: rgba(0, 255, 135, 0.25);
+  
+  --emerald-glow: #00FF87;
+  --emerald-primary: #10B981;
+  --emerald-deep: #059669;
+  --emerald-tint: rgba(0, 255, 135, 0.12);
+  
+  --text-main: #F1F5F9;
+  --text-muted: #94A3B8;
+  --text-dim: #64748B;
 }
 
+html,
 body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Plus Jakarta Sans', 'Segoe UI', 'Roboto', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--bg-void);
+  color: var(--text-main);
   margin: 0;
   padding: 0;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
 }
 
 #root {
-  max-width: 390px;
-  margin: 0 auto;
-  background: white;
-  min-height: 100vh;
-}
-
-@media (min-width: 391px) {
-  #root {
-    margin: 0 auto;
-    border-left: 1px solid #e5e7eb;
-    border-right: 1px solid #e5e7eb;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-  }
+  width: 100%;
+  height: 100vh;
+  background-color: var(--bg-void);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* Animations */
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
+@keyframes pulseSlow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.95); }
 }
 
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
+
+@keyframes wavePulse {
+  0%, 100% { height: 6px; }
+  50% { height: 20px; }
+}
+
+.wave-bar {
+  width: 3px;
+  background-color: var(--emerald-glow);
+  border-radius: 9999px;
+  animation: wavePulse 1s infinite ease-in-out;
+}
+.wave-bar:nth-child(1) { animation-delay: 0.1s; }
+.wave-bar:nth-child(2) { animation-delay: 0.25s; }
+.wave-bar:nth-child(3) { animation-delay: 0.4s; }
+.wave-bar:nth-child(4) { animation-delay: 0.2s; }
+.wave-bar:nth-child(5) { animation-delay: 0.35s; }
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 5px;
+  height: 5px;
 }
-
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 255, 135, 0.35);
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+.glow-emerald-sm {
+  box-shadow: 0 0 14px -2px rgba(0, 255, 135, 0.3);
+}
+
+/* Progress shimmer */
+@keyframes progressShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.progress-emerald-shimmer {
+  background: linear-gradient(90deg, #10B981 0%, #00FF87 50%, #10B981 100%);
+  background-size: 200% 100%;
+  animation: progressShimmer 2.2s infinite linear;
 }
