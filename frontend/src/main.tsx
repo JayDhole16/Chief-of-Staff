@@ -10,7 +10,12 @@ import './index.css'
 
 async function init() {
   if (import.meta.env.VITE_USE_MSW === 'true') {
-    await setupMSW()
+    try {
+      await setupMSW()
+    } catch (err) {
+      // A mock failure must never white-screen the app; log and render anyway.
+      console.error('[MSW] Setup failed; continuing without mocks:', err)
+    }
   }
 
   // Register service worker for PWA
