@@ -25,3 +25,8 @@ DEVELOPMENT_PLAN.md
 # Temporary directories and intermediate artifacts
 /tmp/
 
+# Editor and agent configurations
+.vscode/
+.agents/
+skills-lock.json
+
