@@ -20,3 +20,4 @@ build/
 # Local planning artifacts synced from Cloud; not intended for version control.
 /Planing-by-rehan/
 DEVELOPMENT_PLAN.md
+tmp/update_memo.pdf
