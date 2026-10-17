@@ -14,7 +14,7 @@ import type {
   ActivityEvent,
   SystemSettings,
   OperationsStatus,
-  DailyBrief,
+  V1DailyBrief,
 } from '../api/types'
 import { apiCall } from '../api/client'
 import { ApprovalCard } from '../components/ApprovalCard'
@@ -425,7 +425,7 @@ function PipelineTab(): JSX.Element {
 
 function OperationsTab(): JSX.Element {
   const [status, setStatus] = useState<OperationsStatus | null>(null)
-  const [brief, setBrief] = useState<DailyBrief | null>(null)
+  const [brief, setBrief] = useState<V1DailyBrief | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -435,7 +435,7 @@ function OperationsTab(): JSX.Element {
     try {
       const [operationsStatus, dailyBrief] = await Promise.all([
         apiCall<OperationsStatus>('/v1/ops/status'),
-        apiCall<DailyBrief>('/v1/brief'),
+        apiCall<V1DailyBrief>('/v1/brief'),
       ])
       setStatus(operationsStatus)
       setBrief(dailyBrief)
