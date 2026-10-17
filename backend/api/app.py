@@ -36,13 +36,10 @@ from backend.contracts.read_api import (
     ReceiptStatus,
     ReceiptTimelineItem,
 )
-<<<<<<< HEAD
-=======
 from backend.services.brief import (
     FounderBriefResponse,
     FounderBriefService,
 )
->>>>>>> 7fac91b5d6eca0b999cbddaba8c49e1d87bbe5ec
 from backend.services.executor import (
     FakeCalendarAdapter,
     FakeGmailAdapter,
@@ -800,7 +797,6 @@ def create_app() -> FastAPI:
 
         return EscalationsResponse(escalations=state.escalations, count=len(state.escalations))
 
-<<<<<<< HEAD
     @app.get("/api/v1/ops/status", response_model=OperationsStatusResponse)
     def get_operations_status():
         try:
@@ -908,7 +904,7 @@ def create_app() -> FastAPI:
                 "operational record."
             ),
         )
-=======
+
     @app.get("/api/brief", response_model=FounderBriefResponse)
     def get_founder_brief(x_workspace_id: str = Header(default="WS-DEMO")):
         # Sync escalations from inbound pipeline
@@ -949,8 +945,6 @@ def create_app() -> FastAPI:
             return brief
         except PermissionError as e:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
-
->>>>>>> 7fac91b5d6eca0b999cbddaba8c49e1d87bbe5ec
 
     # -----------------------------------------------------------------------
     # Settings & Kill Switch (T09.5)
