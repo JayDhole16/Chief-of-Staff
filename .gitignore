@@ -16,3 +16,7 @@ build/
 # User-requested local-only Phase 0 workbook sources; keep demo proposal PDFs tracked.
 /AI-Chief-of-Staff-Workbook.pdf
 /AI_Chief_of_Staff_Daily_Workload_Plan_Jayraj_Corrected.pdf
+
+# Local planning artifacts synced from Cloud; not intended for version control.
+/Planing-by-rehan/
+DEVELOPMENT_PLAN.md
