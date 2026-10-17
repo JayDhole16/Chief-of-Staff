@@ -16,28 +16,76 @@ export interface APIResponse<T> {
   error?: APIError
 }
 
-// Auth
+// Auth & Profile
 export interface LoginRequest {
   email: string
   password: string
 }
 
+export interface LoginUser {
+  id: string
+  email: string
+  name: string
+  role?: string
+  business_name?: string
+  timezone?: string
+}
+
 export interface LoginResponse {
   session_id: string
-  user: {
-    id: string
-    email: string
-    name: string
-  }
+  user: LoginUser
 }
 
 export interface SessionResponse {
   session_id: string
-  user: {
-    id: string
-    email: string
-    name: string
-  }
+  user: LoginUser
+}
+
+export interface FounderProfile {
+  id: string
+  name: string
+  email: string
+  role: string
+  business_name: string
+  timezone: string
+  signature: string
+  working_hours: string
+  concise_mode: boolean
+  google_connected: boolean
+  kill_switch_active: boolean
+}
+
+export interface ProfileUpdateRequest {
+  name?: string
+  role?: string
+  business_name?: string
+  timezone?: string
+  signature?: string
+  working_hours?: string
+  concise_mode?: boolean
+}
+
+// Chat API
+export interface ChatMessageRequest {
+  message: string
+  session_id?: string
+}
+
+export interface ChatMessageResponse {
+  id: string
+  session_id: string
+  role: 'assistant'
+  reply: string
+  timestamp: string
+  intent: string
+  facts_cited: Array<{
+    label: string
+    value: string
+    source: string
+  }>
+  guards_checked: string[]
+  suggested_prompts: string[]
+  action_card?: Record<string, unknown> | null
 }
 
 // Verified Fact & Risk Flag Models
@@ -72,7 +120,7 @@ export interface ProposedAction {
   policy_reasons: string[]
   created_at: string
   expires_at: string
-  status: 'pending' | 'approved' | 'rejected' | 'expired' | 'scheduled' | 'executing'
+  status: 'pending' | 'approved' | 'rejected' | 'expired' | 'scheduled' | 'executing' | 'cancelled'
   execute_after?: string
 }
 
@@ -141,7 +189,7 @@ export interface CancelActionResponse {
 export interface ActivityEvent {
   id: string
   timestamp: string
-  type: 'approval' | 'execution' | 'error' | 'proposed' | 'cancelled' | 'blocked'
+  type: 'approval' | 'approved' | 'rejected' | 'scheduled' | 'execution' | 'error' | 'proposed' | 'cancelled' | 'blocked'
   title: string
   description: string
   user_id: string
@@ -214,6 +262,7 @@ export interface Deal {
 export interface PipelineResponse {
   deals: Deal[]
   count: number
+  total_pipeline_paise?: number
 }
 
 // Settings & Ops (T09.5)

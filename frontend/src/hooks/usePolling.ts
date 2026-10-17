@@ -20,6 +20,7 @@ export function usePolling({ interval, onFetch, onError }: UsePollingOptions): {
   const [error, setError] = useState<Error | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const backoffRef = useRef(1) // Exponential backoff multiplier
+  const isMountedRef = useRef(true)
 
   const onFetchRef = useRef(onFetch)
   onFetchRef.current = onFetch
@@ -27,42 +28,55 @@ export function usePolling({ interval, onFetch, onError }: UsePollingOptions): {
   const onErrorRef = useRef(onError)
   onErrorRef.current = onError
 
-  const poll = async () => {
-    try {
-      setIsLoading(true)
-      setError(null)
-      await onFetchRef.current()
-      backoffRef.current = 1 // Reset backoff on success
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err))
-      setError(error)
-      onErrorRef.current?.(error)
-      backoffRef.current = Math.min(backoffRef.current * 2, 10) // Cap at 10x
-    } finally {
-      setIsLoading(false)
-      scheduleNextPoll()
+  const clearScheduledPoll = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
     }
   }
 
   const scheduleNextPoll = () => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    clearScheduledPoll()
+    if (!isMountedRef.current || document.hidden) return
     const delay = interval * backoffRef.current
     timeoutRef.current = setTimeout(() => {
       poll()
     }, delay)
   }
 
-  const handleVisibilityChange = () => {
-    if (document.hidden) {
-      // Pause polling when tab is hidden
-      if (timeoutRef.current) clearTimeout(timeoutRef.current)
-    } else {
-      // Resume polling when tab becomes visible
-      poll()
+  const poll = async () => {
+    if (!isMountedRef.current) return
+    try {
+      setIsLoading(true)
+      setError(null)
+      await onFetchRef.current()
+      if (!isMountedRef.current) return
+      backoffRef.current = 1 // Reset backoff on success
+    } catch (err) {
+      if (!isMountedRef.current) return
+      const error = err instanceof Error ? err : new Error(String(err))
+      setError(error)
+      onErrorRef.current?.(error)
+      backoffRef.current = Math.min(backoffRef.current * 2, 10) // Cap at 10x
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoading(false)
+        scheduleNextPoll()
+      }
     }
   }
 
   useEffect(() => {
+    isMountedRef.current = true
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        clearScheduledPoll()
+      } else {
+        poll()
+      }
+    }
+
     // Initial poll
     poll()
 
@@ -71,11 +85,11 @@ export function usePolling({ interval, onFetch, onError }: UsePollingOptions): {
 
     // Cleanup on unmount
     return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+      isMountedRef.current = false
+      clearScheduledPoll()
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [interval])
-
 
   return {
     isLoading,

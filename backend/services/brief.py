@@ -8,8 +8,9 @@ terminal receipts. Provides a deterministic narration fallback.
 
 from datetime import datetime, timezone
 from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
+from backend.contracts import CompatBaseModel
 from backend.contracts.read_api import (
     ActionReceiptResponse,
     ActivityEventItem,
@@ -17,18 +18,17 @@ from backend.contracts.read_api import (
     EscalationItem,
     ReceiptStatus,
 )
+from backend.facts.inr_formatter import format_inr
 
 
-class BriefFactEvidence(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class BriefFactEvidence(CompatBaseModel):
     key: str
     label: str
     value: str
     source: str
 
 
-class BriefItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class BriefItem(CompatBaseModel):
     id: str
     category: Literal["executed_action", "pending_decision", "escalation", "pipeline_quiet", "blocked_action"]
     deal_id: str | None = None
@@ -45,8 +45,7 @@ class BriefItem(BaseModel):
     recommended_followup: str | None = None
 
 
-class BriefMetrics(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class BriefMetrics(CompatBaseModel):
     actions_executed_count: int = Field(ge=0)
     pending_approvals_count: int = Field(ge=0)
     escalations_count: int = Field(ge=0)
@@ -55,8 +54,7 @@ class BriefMetrics(BaseModel):
     estimated_founder_minutes_saved: float = Field(ge=0.0)
 
 
-class FounderBriefResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class FounderBriefResponse(CompatBaseModel):
     workspace_id: str
     generated_at: datetime
     headline: str
@@ -191,22 +189,22 @@ class FounderBriefService:
                         )
                     )
 
-        # 3. Escalations
+        # 3. Escalations (only open escalations require founder attention)
         sorted_escalations = sorted(escalations, key=lambda e: e.escalation_id)
-        for esc in sorted_escalations:
-            if esc.status == "open":
-                items.append(
-                    BriefItem(
-                        id=f"item_{esc.escalation_id}",
-                        category="escalation",
-                        deal_id=esc.deal_id,
-                        contact_email=esc.contact_email,
-                        summary=f"Escalation ({esc.severity.value}): {esc.reason}",
-                        status="open",
-                        risk_flags=[esc.reason],
-                        recommended_followup="Triage inbound escalation in founder dashboard",
-                    )
+        open_escalations = [esc for esc in sorted_escalations if esc.status == "open"]
+        for esc in open_escalations:
+            items.append(
+                BriefItem(
+                    id=f"item_{esc.escalation_id}",
+                    category="escalation",
+                    deal_id=esc.deal_id,
+                    contact_email=esc.contact_email,
+                    summary=f"Escalation ({esc.severity.value}): {esc.reason}",
+                    status="open",
+                    risk_flags=[esc.reason],
+                    recommended_followup="Triage inbound escalation in founder dashboard",
                 )
+            )
 
         # 4. Pipeline Summary & Quiet Deals
         total_pipeline = sum(d.value_paise for d in deals)
@@ -220,24 +218,25 @@ class FounderBriefService:
                     deal_title=qd.title,
                     contact_name=qd.contact_name,
                     contact_email=qd.contact_email,
-                    summary=f"{qd.title} quiet for {qd.days_quiet} days (Value: ₹{qd.value_paise / 100:,.2f})",
+                    summary=f"{qd.title} quiet for {qd.days_quiet} days (Value: {format_inr(qd.value_paise)})",
                     status="quiet",
                     recommended_followup=f"Candidate for quiet sweep follow-up (stage: {qd.stage.value})",
                 )
             )
 
         # Compute Metrics
+        open_esc_count = len(open_escalations)
         metrics = BriefMetrics(
             actions_executed_count=executed_count,
             pending_approvals_count=pending_count,
-            escalations_count=len([e for e in escalations if e.status == "open"]),
+            escalations_count=open_esc_count,
             blocked_actions_count=blocked_count,
             total_pipeline_value_paise=total_pipeline,
             estimated_founder_minutes_saved=round(executed_count * 5.0 + len(quiet_deals) * 2.0, 1),
         )
 
         # Headline
-        if executed_count == 0 and pending_count == 0 and len(escalations) == 0:
+        if executed_count == 0 and pending_count == 0 and open_esc_count == 0:
             headline = "All systems quiet. No actions pending founder review."
         else:
             parts = []
@@ -245,12 +244,12 @@ class FounderBriefService:
                 parts.append(f"{executed_count} action{'s' if executed_count != 1 else ''} executed")
             if pending_count > 0:
                 parts.append(f"{pending_count} decision{'s' if pending_count != 1 else ''} pending")
-            if len(escalations) > 0:
-                parts.append(f"{len(escalations)} escalation{'s' if len(escalations) != 1 else ''}")
+            if open_esc_count > 0:
+                parts.append(f"{open_esc_count} escalation{'s' if open_esc_count != 1 else ''}")
             headline = ", ".join(parts) + "."
 
         # Narration Text (Deterministic speech text fallback)
-        narration = self._build_narration(executed_count, pending_count, escalations, quiet_deals, items)
+        narration = self._build_narration(executed_count, pending_count, open_escalations, quiet_deals, items)
 
         return FounderBriefResponse(
             workspace_id=self.workspace_id,
@@ -266,14 +265,14 @@ class FounderBriefService:
         self,
         executed_count: int,
         pending_count: int,
-        escalations: list[EscalationItem],
+        open_escalations: list[EscalationItem],
         quiet_deals: list[DealItem],
         items: list[BriefItem],
     ) -> str:
         """Construct deterministic spoken narration text."""
         lines = ["Here is your Founder Brief for Nair Automation Studio."]
 
-        if executed_count == 0 and pending_count == 0 and len(escalations) == 0:
+        if executed_count == 0 and pending_count == 0 and len(open_escalations) == 0:
             lines.append("All operations are currently quiet. No autonomous actions were executed, and no decisions require attention.")
             return " ".join(lines)
 
@@ -291,9 +290,8 @@ class FounderBriefService:
                 f"requiring your review for {names}."
             )
 
-        open_esc = [e for e in escalations if e.status == "open"]
-        if open_esc:
-            lines.append(f"{len(open_esc)} item{'s' if len(open_esc) != 1 else ''} were escalated for safety review.")
+        if open_escalations:
+            lines.append(f"{len(open_escalations)} item{'s' if len(open_escalations) != 1 else ''} were escalated for safety review.")
 
         lines.append("All facts and actions link directly to immutable terminal receipts. Total founder attention required: under 30 seconds.")
         return " ".join(lines)

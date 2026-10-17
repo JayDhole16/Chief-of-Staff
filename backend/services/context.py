@@ -9,6 +9,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID, uuid5, NAMESPACE_DNS
+from zoneinfo import ZoneInfo
 
 from backend.contracts.capsule import (
     CapsuleAddOn,
@@ -105,10 +106,17 @@ def compute_capsule_content_hash(capsule_dict: dict) -> str:
     Compute deterministic SHA-256 hash of capsule business content (excluding capsule_id).
     Used to verify stability and return identical capsule_id when content has not changed.
     """
-    # Clone and strip capsule_id
     data = {k: v for k, v in capsule_dict.items() if k != "capsule_id"}
     canonical_json = json.dumps(data, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
+def _format_in_tz(dt: datetime, tz_name: str) -> str:
+    try:
+        local_dt = dt.astimezone(ZoneInfo(tz_name))
+        return local_dt.strftime("%a %d %b, %H:%M %Z")
+    except Exception:
+        return dt.strftime("%a %d %b, %H:%M %Z")
 
 
 class ContextService:
@@ -122,30 +130,52 @@ class ContextService:
     ) -> tuple[ContextCapsule, str]:
         """
         Assemble a ContextCapsule from task-scoped entities.
-        
+
         Enforces:
           1. Freshness check: validates record_version against expected_record_version.
           2. Tenant/contact isolation: verifies scope parameters match.
           3. Untrusted text separation: customer text only appears in untrusted_text fields.
           4. Stable deterministic content hash and stable UUID generation.
         """
-        # 1. Freshness check
+        # 1. Tenant, contact, and deal scope isolation check
+        if not ctx.tenant_id or not str(ctx.tenant_id).strip():
+            raise CapsuleIsolationError("Missing or empty tenant_id in capsule context")
+        if not ctx.contact_id or not str(ctx.contact_id).strip():
+            raise CapsuleIsolationError("Missing or empty contact_id in capsule context")
+        if not ctx.deal_id or not str(ctx.deal_id).strip():
+            raise CapsuleIsolationError("Missing or empty deal_id in capsule context")
+
+        for m in ctx.messages or []:
+            if "tenant_id" in m and m["tenant_id"] != ctx.tenant_id:
+                raise CapsuleIsolationError(
+                    f"Cross-tenant message leakage detected: {m['tenant_id']} != {ctx.tenant_id}"
+                )
+            if "contact_id" in m and m["contact_id"] != ctx.contact_id:
+                raise CapsuleIsolationError(
+                    f"Cross-contact message leakage detected: {m['contact_id']} != {ctx.contact_id}"
+                )
+            if "deal_id" in m and m["deal_id"] != ctx.deal_id:
+                raise CapsuleIsolationError(
+                    f"Cross-deal message leakage detected: {m['deal_id']} != {ctx.deal_id}"
+                )
+
+        # 2. Freshness check
         if expected_record_version is not None and ctx.deal_record_version != expected_record_version:
             raise CapsuleStaleError(
                 f"Deal record is stale: expected version {expected_record_version}, got {ctx.deal_record_version}"
             )
 
-        # 2. Contact timezone fallback
+        # 3. Contact timezone fallback
         contact_tz = ctx.contact_tz if ctx.contact_tz else ctx.founder_tz
 
-        # Format Now displays
+        # Format Now displays in actual founder and contact timezones
         now_utc = ctx.now_dt.astimezone(timezone.utc).isoformat()
         now_obj = CapsuleNow(
             utc=now_utc,
             founder_tz=ctx.founder_tz,
-            founder_local_display=ctx.now_dt.strftime("%a %d %b, %H:%M %Z"),
+            founder_local_display=_format_in_tz(ctx.now_dt, ctx.founder_tz),
             contact_tz=contact_tz,
-            contact_local_display=ctx.now_dt.strftime("%a %d %b, %H:%M %Z"),
+            contact_local_display=_format_in_tz(ctx.now_dt, contact_tz),
         )
 
         # Convert calendar days
@@ -338,4 +368,3 @@ class ContextService:
         )
 
         return capsule, content_hash
-

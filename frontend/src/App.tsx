@@ -16,8 +16,6 @@ export function App(): JSX.Element {
   // Restore session from sessionStorage on mount
   useEffect(() => {
     if (hasSession()) {
-      // In a real app, you'd verify the session with /session endpoint
-      // For now, we trust sessionStorage (it's cleared on tab close)
       const stored = sessionStorage.getItem('session_data')
       if (stored) {
         try {
@@ -31,9 +29,13 @@ export function App(): JSX.Element {
   }, [])
 
   const handleLoginSuccess = (response: LoginResponse) => {
-    // Store session in memory (sessionStorage)
     sessionStorage.setItem('session_data', JSON.stringify(response))
     setSession(response)
+  }
+
+  const handleUpdateSession = (updated: LoginResponse) => {
+    sessionStorage.setItem('session_data', JSON.stringify(updated))
+    setSession(updated)
   }
 
   const handleLogout = () => {
@@ -50,10 +52,12 @@ export function App(): JSX.Element {
           justifyContent: 'center',
           alignItems: 'center',
           height: '100vh',
-          backgroundColor: '#f3f4f6',
+          backgroundColor: 'var(--bg-void, #07090C)',
         }}
       >
-        <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>Loading...</div>
+        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted, #94A3B8)' }}>
+          Initializing Chief of Staff...
+        </div>
       </div>
     )
   }
@@ -64,7 +68,11 @@ export function App(): JSX.Element {
       {!session ? (
         <LoginPage onLoginSuccess={handleLoginSuccess} />
       ) : (
-        <DashboardPage session={session} onLogout={handleLogout} />
+        <DashboardPage
+          session={session}
+          onLogout={handleLogout}
+          onUpdateSession={handleUpdateSession}
+        />
       )}
     </>
   )

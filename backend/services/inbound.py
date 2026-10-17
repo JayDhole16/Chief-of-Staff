@@ -179,6 +179,16 @@ DEFAULT_DEALS = {
 }
 
 
+def _is_valid_email(addr: str | None) -> bool:
+    if not addr or not isinstance(addr, str):
+        return False
+    cleaned = addr.strip()
+    if cleaned.count("@") != 1:
+        return False
+    local, domain = cleaned.split("@")
+    return bool(local and domain and "." in domain and not domain.startswith(".") and not domain.endswith("."))
+
+
 # ---------------------------------------------------------------------------
 # Pipeline Implementation
 # ---------------------------------------------------------------------------
@@ -199,8 +209,16 @@ class InboundProcessingPipeline:
         activity_service_hook: Any = None,
         escalation_service_hook: Any = None,
     ):
-        self.contacts = contacts if contacts is not None else dict(DEFAULT_CONTACTS)
-        self.deals = deals if deals is not None else dict(DEFAULT_DEALS)
+        self.contacts = (
+            {k.strip().lower(): dict(v) for k, v in contacts.items()}
+            if contacts is not None
+            else {k: dict(v) for k, v in DEFAULT_CONTACTS.items()}
+        )
+        self.deals = (
+            {k: dict(v) for k, v in deals.items()}
+            if deals is not None
+            else {k: dict(v) for k, v in DEFAULT_DEALS.items()}
+        )
         self.ingested_message_ids = ingested_message_ids if ingested_message_ids is not None else set()
         self.task_service_hook = task_service_hook
         self.activity_service_hook = activity_service_hook
@@ -215,9 +233,9 @@ class InboundProcessingPipeline:
         """Validate inbound message structure."""
         if not msg.message_id or not msg.message_id.strip():
             return False, "Missing or empty message_id"
-        if not msg.from_email or "@" not in msg.from_email:
+        if not _is_valid_email(msg.from_email):
             return False, f"Invalid or missing from_email: {msg.from_email}"
-        if not msg.to_email or "@" not in msg.to_email:
+        if not _is_valid_email(msg.to_email):
             return False, f"Invalid or missing to_email: {msg.to_email}"
         if not msg.subject or not msg.subject.strip():
             return False, "Missing or empty subject"
@@ -237,6 +255,7 @@ class InboundProcessingPipeline:
         is_auto_header = auto_submitted in ("auto-replied", "auto-generated") or precedence in ("bulk", "junk", "auto_reply")
         is_auto_text = (
             "out of office" in body_lower or
+            "out of office" in subject_lower or
             "automatic reply" in subject_lower or
             "auto reply" in subject_lower or
             "annual leave" in body_lower or
@@ -249,15 +268,20 @@ class InboundProcessingPipeline:
             if date_match:
                 return_date = date_match.group(1)
             else:
-                date_text_match = re.search(r"(\d{1,2}\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+20\d\d)", msg.body, re.IGNORECASE)
+                date_text_match = re.search(
+                    r"(\d{1,2}\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+20\d\d)",
+                    msg.body,
+                    re.IGNORECASE,
+                )
                 if date_text_match:
-                    try:
-                        dt = datetime.strptime(date_text_match.group(1), "%d %B %Y")
-                        return_date = dt.strftime("%Y-%m-%d")
-                    except ValueError:
-                        pass
-                if not return_date and "20 october 2026" in body_lower:
-                    return_date = "2026-10-20"
+                    normalized_date = " ".join(date_text_match.group(1).split())
+                    for fmt in ("%d %B %Y", "%d %b %Y"):
+                        try:
+                            dt = datetime.strptime(normalized_date, fmt)
+                            return_date = dt.strftime("%Y-%m-%d")
+                            break
+                        except ValueError:
+                            continue
 
             return InboundClassification(
                 intent="AUTO_REPLY_OOO",
@@ -294,7 +318,7 @@ class InboundProcessingPipeline:
             r"promised\s+(\d+%)\s+(?:discount\s+)?on\s+(?:a\s+)?call",
             r"promised\s+(\d+%)\s+discount",
             r"you promised\s+(\d+%)",
-            r"verbal discount",
+            r"verbal discount(?:\s+of\s+\d+%)?",
             r"promised\s+20%",
         ]
         price_claims = []
@@ -339,7 +363,6 @@ class InboundProcessingPipeline:
 
         # Check identity ambiguity (e.g. personal email claiming identity of known contact)
         if "personal@gmail.com" in from_email or ("raju" in from_email and "patel-warehousing.in" not in from_email):
-            # Domain mismatch probe (e.g. INB-004)
             return InboundResolution(
                 matched_contact_id=None,
                 matched_contact_name=None,
@@ -398,6 +421,8 @@ class InboundProcessingPipeline:
         """Assess deterministic safety risks and compute guard verdicts."""
         risk_flags: list[InboundRiskFlag] = []
         guards_triggered: list[str] = []
+        normalized_email = msg.from_email.strip().lower()
+        contact = self.contacts.get(normalized_email)
 
         # Duplicate replay
         if resolution.is_duplicate:
@@ -414,7 +439,7 @@ class InboundProcessingPipeline:
         # Unverified identity / domain spoofing (INB-004)
         if resolution.matched_contact_id is None and (
             classification.intent == "IDENTITY_AMBIGUITY" or
-            "personal@gmail.com" in msg.from_email.lower() or
+            "personal@gmail.com" in normalized_email or
             "confidential" in msg.body.lower() or
             resolution.confidence <= 0.2
         ):
@@ -447,8 +472,12 @@ class InboundProcessingPipeline:
             guards_triggered.append("G04")
             return "BLOCK", risk_flags, guards_triggered
 
-        # Opt-out / Do Not Contact
-        if classification.intent == "OPT_OUT":
+        # Opt-out / Do Not Contact (current message OR previously opted-out contact)
+        if (
+            classification.intent == "OPT_OUT"
+            or resolution.matched_contact_id in self.opted_out_contacts
+            or (contact and contact.get("do_not_contact"))
+        ):
             risk_flags.append(
                 InboundRiskFlag(
                     code="G12",
@@ -512,7 +541,6 @@ class InboundProcessingPipeline:
             return "ASK", risk_flags, guards_triggered
 
         # Contact requires approval (e.g. Arjun D-4)
-        contact = self.contacts.get(msg.from_email.lower())
         if contact and contact.get("autonomy_mode") == "approval_required":
             risk_flags.append(
                 InboundRiskFlag(
@@ -588,7 +616,6 @@ class InboundProcessingPipeline:
 
         if resolution.is_duplicate:
             status = "dropped"
-            # Do NOT record duplicate in message store
             return InboundProcessResult(
                 status=status,
                 message_id=msg.message_id,
@@ -608,7 +635,6 @@ class InboundProcessingPipeline:
             if resolution.matched_contact_id and classification.return_date:
                 self.snoozed_contacts[resolution.matched_contact_id] = classification.return_date
 
-            # Record activity event
             act_id = f"act_{uuid4().hex[:8]}"
             activity_id = act_id
             self.recorded_activities.append({
@@ -630,11 +656,14 @@ class InboundProcessingPipeline:
                 activity_id=activity_id,
             )
 
-        # Handle Opt-Out
-        if classification.intent == "OPT_OUT":
+        # Handle Opt-Out (current or persistent DNC)
+        if classification.intent == "OPT_OUT" or "G12" in guards:
             status = "dropped"
             if resolution.matched_contact_id:
                 self.opted_out_contacts.add(resolution.matched_contact_id)
+            normalized_email = msg.from_email.strip().lower()
+            if normalized_email in self.contacts:
+                self.contacts[normalized_email]["do_not_contact"] = True
             return InboundProcessResult(
                 status=status,
                 message_id=msg.message_id,
@@ -667,7 +696,6 @@ class InboundProcessingPipeline:
             }
             self.created_escalations.append(escalation_record)
 
-            # Record activity event for escalation
             act_id = f"act_{uuid4().hex[:8]}"
             activity_id = act_id
             self.recorded_activities.append({
@@ -692,7 +720,6 @@ class InboundProcessingPipeline:
             )
 
         # Handle Scoped Task Creation (ALLOW or ASK verdicts)
-        # Attempt task creation via hook if present
         if self.task_service_hook is not None:
             try:
                 task_id = self.task_service_hook(

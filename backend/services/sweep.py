@@ -14,9 +14,9 @@ import hashlib
 from typing import Any, Literal
 from uuid import uuid4
 
-from backend.domain.types import Money, TrustedFacts, FactValue, FactReference, Discount, DiscountType
+from backend.domain.types import Discount, DiscountType
 from backend.facts.inr_formatter import format_inr
-from backend.facts.trusted_render import render_template, calculate_offer
+from backend.facts.trusted_render import calculate_offer
 
 
 # ---------------------------------------------------------------------------
@@ -236,18 +236,19 @@ class QuietSweepService:
                     skipped.append({"deal_id": deal.id, "reason": f"active_proposal_already_exists_{existing[0].ref}"})
                     continue
 
-                # Deal is eligible!
-                eligible_count += 1
-
-                # Calculate proposal numbers with deterministic discount
-                discount_pct = min(deal.max_discount_pct, self.mandate_max_discount_pct)
-                final_price_paise = deal.value_paise
-                if discount_pct > 0:
-                    discount_paise = int(deal.value_paise * (discount_pct / 100))
-                    final_price_paise = deal.value_paise - discount_paise
-
+                # Validate price before counting as eligible
                 formatted_base_price = format_inr(deal.value_paise)
+
+                # Calculate proposal numbers with exact integer/Decimal math via calculate_offer
+                discount_pct = max(0, min(deal.max_discount_pct, self.mandate_max_discount_pct))
+                final_price_paise = calculate_offer(
+                    base_price_paise=deal.value_paise,
+                    discount=Discount(DiscountType.PERCENTAGE, discount_pct),
+                    mandate_max_discount_pct=self.mandate_max_discount_pct,
+                )
                 formatted_final_price = format_inr(final_price_paise)
+
+                eligible_count += 1
 
                 # Render email body using verified facts
                 rendered_body = (

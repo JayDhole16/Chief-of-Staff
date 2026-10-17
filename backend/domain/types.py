@@ -4,7 +4,7 @@ No I/O, no clock, no randomness. All types are immutable and hashable.
 """
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
 from typing import TypeAlias
 
@@ -28,7 +28,7 @@ class Money:
     currency: Currency = Currency.INR
 
     def __post_init__(self) -> None:
-        if not isinstance(self.amount_paise, int):
+        if not isinstance(self.amount_paise, int) or isinstance(self.amount_paise, bool):
             raise TypeError(f"amount_paise must be int, got {type(self.amount_paise)}")
         if self.amount_paise < 0:
             raise ValueError(f"amount_paise must be >= 0, got {self.amount_paise}")
@@ -40,8 +40,10 @@ class Money:
     @staticmethod
     def from_rupees(rupees: int | Decimal) -> "Money":
         """Create Money from rupees (int or Decimal), convert to paise."""
+        if isinstance(rupees, bool) or not isinstance(rupees, (int, Decimal)):
+            raise TypeError(f"rupees must be int or Decimal, got {type(rupees)}")
         if isinstance(rupees, Decimal):
-            paise = int(rupees * Decimal(100))
+            paise = int((rupees * Decimal(100)).quantize(Decimal(1), rounding=ROUND_HALF_UP))
         else:
             paise = rupees * 100
         return Money(paise)
@@ -69,6 +71,10 @@ class TrustedFacts:
     """
     facts: dict[str, FactValue]
 
+    def __post_init__(self) -> None:
+        # Defensive shallow copy so external mutation of caller's dict cannot alter TrustedFacts
+        object.__setattr__(self, "facts", dict(self.facts))
+
     def get(self, key: str) -> FactValue | None:
         """Retrieve a fact by key."""
         return self.facts.get(key)
@@ -93,6 +99,8 @@ class Discount:
     value: int  # percentage (0-100) or paise
 
     def __post_init__(self) -> None:
+        if not isinstance(self.value, int) or isinstance(self.value, bool):
+            raise TypeError(f"Discount value must be int, got {type(self.value)}")
         if self.type == DiscountType.PERCENTAGE:
             if not (0 <= self.value <= 100):
                 raise ValueError(f"Percentage must be 0-100, got {self.value}")

@@ -6,7 +6,7 @@ timezone projections, signed slot token minting and validation, and busy cache s
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime, time as dtime, timedelta
+from datetime import datetime, time as dtime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -83,6 +83,11 @@ class SlotService:
           8. Format displays in founder and contact zones.
           9. Return up to max_slots (S1..S4) with signed slot tokens.
         """
+        if params.slot_grid_minutes <= 0:
+            raise ValueError("slot_grid_minutes must be positive")
+        if params.duration_minutes <= 0:
+            raise ValueError("duration_minutes must be positive")
+
         # 1. Busy cache freshness check (15 minutes = 900 seconds)
         cache_age_seconds = (params.now_utc - params.calendar_busy_synced_at).total_seconds()
         if cache_age_seconds > 900:
@@ -101,7 +106,6 @@ class SlotService:
         perspective_tz = f_tz if params.tz_perspective == "founder" else c_tz
 
         # 3. Part-of-day window in perspective zone
-        # morning 09:00-12:00, afternoon 13:00-17:00, evening 17:00-19:00, any = 09:30-18:30
         year, month, day = map(int, params.target_date.split("-"))
 
         if params.part_of_day == "morning":
@@ -124,8 +128,7 @@ class SlotService:
         local_win_start = datetime(year, month, day, win_start_time.hour, win_start_time.minute, tzinfo=perspective_tz)
         local_win_end = datetime(year, month, day, win_end_time.hour, win_end_time.minute, tzinfo=perspective_tz)
 
-        # Founder working hours for that date in founder local time (09:30 - 18:30)
-        # Check if founder date is Mon-Fri
+        # Founder working hours for that date in founder local time (09:30 - 18:30 Mon-Fri)
         founder_local_date = local_win_start.astimezone(f_tz).date()
         if founder_local_date.weekday() >= 5:  # Saturday or Sunday
             return FindSlotsResult(
@@ -163,12 +166,13 @@ class SlotService:
         min_notice = timedelta(minutes=params.min_notice_minutes)
         grid = timedelta(minutes=params.slot_grid_minutes)
 
-        # 4. Generate candidate slot starts aligned to slot_grid_minutes in founder zone
+        # 4. Generate candidate slot starts aligned forward to slot_grid_minutes in founder zone
         founder_start = win_start_utc.astimezone(f_tz)
         minute_offset = founder_start.minute % params.slot_grid_minutes
-        if minute_offset != 0:
-            aligned_minute = founder_start.minute + (params.slot_grid_minutes - minute_offset)
-            founder_start = founder_start.replace(minute=0, second=0, microsecond=0) + timedelta(minutes=aligned_minute)
+        has_subminute = founder_start.second > 0 or founder_start.microsecond > 0
+        if minute_offset != 0 or has_subminute:
+            advance_minutes = params.slot_grid_minutes - minute_offset
+            founder_start = founder_start.replace(second=0, microsecond=0) + timedelta(minutes=advance_minutes)
         else:
             founder_start = founder_start.replace(second=0, microsecond=0)
 
@@ -191,13 +195,11 @@ class SlotService:
                 buffered_busy_start = busy.start_utc - buffer
                 buffered_busy_end = busy.end_utc + buffer
 
-                # Two intervals [cand_start, cand_end] and [buffered_start, buffered_end] overlap if:
                 if cand_start < buffered_busy_end and cand_end > buffered_busy_start:
                     overlap = True
                     break
 
             if not overlap:
-                # Slot is available
                 label = f"S{slot_index}"
                 slot_id = mint_slot_token(
                     task_id=params.task_id,
@@ -206,26 +208,25 @@ class SlotService:
                     signing_key=params.slot_signing_key,
                 )
 
-                # Format founder display: e.g. "Thu 15 Oct, 3:00-3:30 PM IST"
                 cand_f_start = cand_start.astimezone(f_tz)
                 cand_f_end = cand_end.astimezone(f_tz)
+                f_tz_abbr = "IST" if params.founder_tz == "Asia/Kolkata" else (cand_f_start.strftime("%Z") or params.founder_tz)
                 display_founder = (
                     f"{cand_f_start.strftime('%a %d %b')}, "
                     f"{cand_f_start.strftime('%I:%M').lstrip('0')}-"
-                    f"{cand_f_end.strftime('%I:%M').lstrip('0')} {cand_f_end.strftime('%p')} IST"
+                    f"{cand_f_end.strftime('%I:%M').lstrip('0')} {cand_f_end.strftime('%p')} {f_tz_abbr}"
                 )
 
                 display_contact = None
                 if params.contact_tz != params.founder_tz:
                     cand_c_start = cand_start.astimezone(c_tz)
                     cand_c_end = cand_end.astimezone(c_tz)
-                    tz_name = cand_c_start.strftime("%Z")
+                    tz_name = "IST" if params.contact_tz == "Asia/Kolkata" else (cand_c_start.strftime("%Z") or params.contact_tz)
                     display_contact = (
                         f"{cand_c_start.strftime('%a %d %b')}, "
                         f"{cand_c_start.strftime('%I:%M').lstrip('0')}-"
                         f"{cand_c_end.strftime('%I:%M').lstrip('0')} {cand_c_end.strftime('%p')} {tz_name}"
                     )
-
 
                 valid_slots.append(
                     Slot(

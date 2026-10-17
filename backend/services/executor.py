@@ -155,7 +155,6 @@ class WorkerExecutor:
             return prior_receipt
 
         # 1. Kill Switch Check
-        # Autonomous action blocked by kill switch; explicitly approved action still executes unless blocked by guard
         if self.kill_switch_active and not is_founder_approved:
             timeline.append(ReceiptTimelineItem(
                 timestamp=now,
@@ -164,7 +163,7 @@ class WorkerExecutor:
             receipt = ActionReceiptResponse(
                 receipt_id=receipt_id,
                 action_ref=action_ref,
-                action_kind=action_kind,
+                action_kind=action_kind if action_kind in ("email", "calendar") else "email",
                 status=ReceiptStatus.BLOCKED,
                 authority_clause=authority_clause,
                 recipient_email=recipient_email,
@@ -189,8 +188,8 @@ class WorkerExecutor:
             })
             return receipt
 
-        expected_hash = hashlib.sha256(rendered_body_or_time.encode("utf-8")).hexdigest()
-        if not hmac.compare_digest(rendered_hash, expected_hash):
+        expected_hash = hashlib.sha256((rendered_body_or_time or "").encode("utf-8")).hexdigest()
+        if not rendered_hash or not hmac.compare_digest(rendered_hash, expected_hash):
             timeline.append(ReceiptTimelineItem(
                 timestamp=now,
                 event="Execution blocked: rendered content does not match its SHA-256 hash.",
@@ -198,11 +197,11 @@ class WorkerExecutor:
             receipt = ActionReceiptResponse(
                 receipt_id=receipt_id,
                 action_ref=action_ref,
-                action_kind=action_kind,
+                action_kind=action_kind if action_kind in ("email", "calendar") else "email",
                 status=ReceiptStatus.BLOCKED,
                 authority_clause=authority_clause,
                 recipient_email=recipient_email,
-                rendered_hash=rendered_hash,
+                rendered_hash=rendered_hash or "",
                 checks_passed=checks_passed or [],
                 facts_used=[ReceiptFactItem(**f) for f in (facts_used or [])],
                 cancelled_at=now,
@@ -214,7 +213,11 @@ class WorkerExecutor:
 
         # 2. Execute via adapter
         external_id = None
+        meeting_time_str = None
         try:
+            if not recipient_email or "@" not in recipient_email:
+                raise ValueError(f"Invalid recipient_email: {recipient_email}")
+
             if action_kind == "email":
                 timeline.append(ReceiptTimelineItem(
                     timestamp=now,
@@ -255,10 +258,13 @@ class WorkerExecutor:
                     attendee_email=recipient_email,
                     description=calendar_description,
                 )
+                meeting_time_str = f"{rendered_body_or_time} - {calendar_end_time_iso}"
                 timeline.append(ReceiptTimelineItem(
                     timestamp=now,
                     event=f"Google Calendar event confirmed. External ID: {external_id}"
                 ))
+            else:
+                raise ValueError(f"Unsupported action_kind: {action_kind}")
 
             # 3. Successful Terminal Receipt
             receipt = ActionReceiptResponse(
@@ -268,6 +274,7 @@ class WorkerExecutor:
                 status=ReceiptStatus.EXECUTED,
                 authority_clause=authority_clause,
                 recipient_email=recipient_email,
+                meeting_time=meeting_time_str,
                 external_id=external_id,
                 rendered_hash=rendered_hash,
                 checks_passed=checks_passed or ["G01", "G04", "G05", "G06", "G07", "G09", "G10", "G11"],
@@ -301,7 +308,7 @@ class WorkerExecutor:
             receipt = ActionReceiptResponse(
                 receipt_id=receipt_id,
                 action_ref=action_ref,
-                action_kind=action_kind,
+                action_kind=action_kind if action_kind in ("email", "calendar") else "email",
                 status=ReceiptStatus.BLOCKED,
                 authority_clause=authority_clause,
                 recipient_email=recipient_email,

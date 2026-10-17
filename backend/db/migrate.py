@@ -3,10 +3,18 @@
 import os
 from pathlib import Path
 
-import psycopg
+
+def _strip_sql_comments(sql_chunk: str) -> str:
+    lines = [
+        line for line in sql_chunk.splitlines()
+        if not line.strip().startswith("--")
+    ]
+    return "\n".join(lines).strip()
 
 
 def main() -> None:
+    import psycopg
+
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         raise RuntimeError("DATABASE_URL must be configured before running migrations")
@@ -18,8 +26,9 @@ def main() -> None:
 
     with psycopg.connect(database_url) as connection:
         for migration in migrations:
-            for statement in migration.read_text(encoding="utf-8").split(";"):
-                if statement.strip():
+            for raw_statement in migration.read_text(encoding="utf-8").split(";"):
+                statement = _strip_sql_comments(raw_statement)
+                if statement:
                     connection.execute(statement)
             print(f"Applied {migration.name}")
 

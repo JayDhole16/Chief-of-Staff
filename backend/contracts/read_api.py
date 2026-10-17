@@ -6,19 +6,15 @@ Pure contracts defining response schemas and query parameters for:
 - /receipts/{ref_or_id}: Terminal action receipts
 - /deals: Sales pipeline and deal quietness status
 - /escalations: Out-of-bounds or flagged items requiring founder review
-
-Note on T08.4 dependency:
-Per DEVELOPMENT_PLAN §3 and Phase 8 specifications, the live HTTP route implementation
-for read APIs depends on Jairaj's T05.7 (authority router & database transaction integration).
-These typed contracts and expectations define the canonical interface and validate independent
-contract tests.
 """
 
 from datetime import datetime
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
+
+from backend.contracts import CompatBaseModel
 
 
 class ActivityType(str, Enum):
@@ -31,9 +27,7 @@ class ActivityType(str, Enum):
     BLOCKED = "blocked"
 
 
-class ActivityEventItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ActivityEventItem(CompatBaseModel):
     id: str
     timestamp: datetime
     type: ActivityType
@@ -48,9 +42,7 @@ class ActivityEventItem(BaseModel):
     can_undo: bool = False
 
 
-class ActivityFeedResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ActivityFeedResponse(CompatBaseModel):
     events: list[ActivityEventItem]
     count: int
     has_more: bool = False
@@ -63,25 +55,19 @@ class ReceiptStatus(str, Enum):
     BLOCKED = "blocked"
 
 
-class ReceiptFactItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ReceiptFactItem(CompatBaseModel):
     key: str
     label: str
     value: str
     source: str
 
 
-class ReceiptTimelineItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ReceiptTimelineItem(CompatBaseModel):
     timestamp: datetime
     event: str
 
 
-class ActionReceiptResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ActionReceiptResponse(CompatBaseModel):
     receipt_id: str
     action_ref: str
     action_kind: Literal["email", "calendar"]
@@ -108,9 +94,7 @@ class DealStage(str, Enum):
     WON = "won"
 
 
-class DealItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class DealItem(CompatBaseModel):
     id: str
     title: str
     contact_name: str | None = None
@@ -123,9 +107,7 @@ class DealItem(BaseModel):
     last_interaction: datetime | None = None
 
 
-class PipelineDealsResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class PipelineDealsResponse(CompatBaseModel):
     deals: list[DealItem]
     count: int
     total_pipeline_paise: int = Field(ge=0)
@@ -136,9 +118,7 @@ class EscalationSeverity(str, Enum):
     CRITICAL = "critical"
 
 
-class EscalationItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class EscalationItem(CompatBaseModel):
     escalation_id: str
     created_at: datetime
     severity: EscalationSeverity
@@ -150,8 +130,6 @@ class EscalationItem(BaseModel):
     status: Literal["open", "resolved", "dismissed"] = "open"
 
 
-class EscalationsResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class EscalationsResponse(CompatBaseModel):
     escalations: list[EscalationItem]
     count: int

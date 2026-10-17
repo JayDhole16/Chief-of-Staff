@@ -2,16 +2,16 @@
 Context Capsule contracts per BACKEND_SCHEMA §7.3 and TRD §9.2 / §9.3.
 """
 
-from datetime import date, datetime
-from typing import Any, Literal
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
+
+from backend.contracts import CompatBaseModel
 
 
-class CapsuleTask(BaseModel):
+class CapsuleTask(CompatBaseModel):
     """Task metadata visible to the agent."""
-    model_config = ConfigDict(extra="forbid")
 
     ref: str
     kind: Literal["followup", "inbound_reply", "scheduling", "founder_request"]
@@ -19,9 +19,8 @@ class CapsuleTask(BaseModel):
     allowed_action_types: list[str] = Field(default_factory=list)
 
 
-class CapsuleNow(BaseModel):
+class CapsuleNow(CompatBaseModel):
     """Timestamp perspective for founder and contact."""
-    model_config = ConfigDict(extra="forbid")
 
     utc: str
     founder_tz: str
@@ -30,9 +29,8 @@ class CapsuleNow(BaseModel):
     contact_local_display: str
 
 
-class CapsuleCalendarDay(BaseModel):
+class CapsuleCalendarDay(CompatBaseModel):
     """One day in the founder's 14-day horizon."""
-    model_config = ConfigDict(extra="forbid")
 
     date: str  # YYYY-MM-DD
     weekday: str  # e.g. "Thu"
@@ -40,18 +38,16 @@ class CapsuleCalendarDay(BaseModel):
     is_working_day: bool
 
 
-class CapsuleFounder(BaseModel):
+class CapsuleFounder(CompatBaseModel):
     """Founder profile details."""
-    model_config = ConfigDict(extra="forbid")
 
     name: str
     signature_name: str
     business_name: str
 
 
-class CapsuleContact(BaseModel):
+class CapsuleContact(CompatBaseModel):
     """Contact metadata with trust/autonomy mode."""
-    model_config = ConfigDict(extra="forbid")
 
     ref: str
     name: str
@@ -61,9 +57,8 @@ class CapsuleContact(BaseModel):
     autonomy_mode: Literal["mandate_governed", "approval_required"]
 
 
-class CapsuleDeal(BaseModel):
+class CapsuleDeal(CompatBaseModel):
     """Deal metadata."""
-    model_config = ConfigDict(extra="forbid")
 
     ref: str
     title: str
@@ -73,9 +68,8 @@ class CapsuleDeal(BaseModel):
     founder_notes: str | None = None
 
 
-class CapsuleProposal(BaseModel):
+class CapsuleProposal(CompatBaseModel):
     """Proposal metadata if attached."""
-    model_config = ConfigDict(extra="forbid")
 
     ref: str
     title: str
@@ -83,44 +77,39 @@ class CapsuleProposal(BaseModel):
     terms_status: str
 
 
-class CapsuleFact(BaseModel):
+class CapsuleFact(CompatBaseModel):
     """Verified fact available for template interpolation."""
-    model_config = ConfigDict(extra="forbid")
 
     key: str
     display: str
     source: str
 
 
-class CapsuleConflict(BaseModel):
+class CapsuleConflict(CompatBaseModel):
     """Conflicting terms: do not state this."""
-    model_config = ConfigDict(extra="forbid")
 
     key: str
     note: str
 
 
-class CapsuleAddOn(BaseModel):
+class CapsuleAddOn(CompatBaseModel):
     """Allowed catalog add-on."""
-    model_config = ConfigDict(extra="forbid")
 
     sku: str
     name: str
     fact_key: str
 
 
-class CapsuleOfferOptions(BaseModel):
+class CapsuleOfferOptions(CompatBaseModel):
     """Offer limits and allowed add-ons."""
-    model_config = ConfigDict(extra="forbid")
 
     allowed_add_ons: list[CapsuleAddOn] = Field(default_factory=list)
     autonomous_discount_max_pct: str
     hard_ceiling_pct: str
 
 
-class CapsuleMessage(BaseModel):
+class CapsuleMessage(CompatBaseModel):
     """A message in the thread conversation."""
-    model_config = ConfigDict(extra="forbid")
 
     ref: str
     direction: Literal["inbound", "outbound"]
@@ -132,9 +121,8 @@ class CapsuleMessage(BaseModel):
     risk_flags: list[str] = Field(default_factory=list)
 
 
-class CapsuleThread(BaseModel):
+class CapsuleThread(CompatBaseModel):
     """Conversation thread up to 6 messages."""
-    model_config = ConfigDict(extra="forbid")
 
     ref: str
     subject: str
@@ -142,9 +130,8 @@ class CapsuleThread(BaseModel):
     messages: list[CapsuleMessage] = Field(default_factory=list)
 
 
-class CapsuleAuthority(BaseModel):
+class CapsuleAuthority(CompatBaseModel):
     """Mandate and kill switch authority summary."""
-    model_config = ConfigDict(extra="forbid")
 
     mandate_ref: str | None = None
     clause_lines: list[str] = Field(default_factory=list)
@@ -153,20 +140,18 @@ class CapsuleAuthority(BaseModel):
     summary: str
 
 
-class CapsuleLimits(BaseModel):
+class CapsuleLimits(CompatBaseModel):
     """Safety limits for action drafting."""
-    model_config = ConfigDict(extra="forbid")
 
     max_body_chars: int = 2000
     max_actions: int = 1
 
 
-class ContextCapsule(BaseModel):
+class ContextCapsule(CompatBaseModel):
     """
     Context Capsule: the only view of business data an agent gets.
     Implements BACKEND_SCHEMA §7.3 and TRD §9.2 / §9.3.
     """
-    model_config = ConfigDict(extra="forbid")
 
     capsule_id: UUID
     capsule_version: Literal["1"] = "1"
@@ -186,4 +171,3 @@ class ContextCapsule(BaseModel):
     authority: CapsuleAuthority
     rules: list[str] = Field(default_factory=list)
     limits: CapsuleLimits = CapsuleLimits()
-

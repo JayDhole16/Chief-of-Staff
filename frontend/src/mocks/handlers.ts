@@ -1,7 +1,6 @@
 /**
- * MSW request handlers: login, session, activity, approvals, receipts, pipeline, settings.
- * Only enabled in development (VITE_USE_MSW=true).
- * Never shipped to production.
+ * MSW request handlers: login, session, profile, chat, activity, approvals, receipts, pipeline, settings.
+ * Only enabled in development (VITE_USE_MSW=true) or test suites.
  */
 
 import { http, HttpResponse, delay } from 'msw'
@@ -20,6 +19,11 @@ import type {
   SystemSettings,
   OperationsStatus,
   V1DailyBrief,
+  FounderBrief,
+  FounderProfile,
+  ProfileUpdateRequest,
+  ChatMessageRequest,
+  ChatMessageResponse,
 } from '../api/types'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
@@ -29,6 +33,20 @@ const mockSessions = new Map<string, { userId: string; email: string; name: stri
   ['test_session_123', { userId: 'user_123', email: 'test@example.com', name: 'Meera Nair' }],
 ])
 let sessionCounter = 0
+
+let mockProfile: FounderProfile = {
+  id: 'user_123',
+  name: 'Meera Nair',
+  email: 'meera@agency.in',
+  role: 'Founder & CEO',
+  business_name: 'Nair Automation Labs',
+  timezone: 'Asia/Kolkata',
+  signature: 'Meera Nair · Chief of Staff',
+  working_hours: '09:30 - 18:30 IST (Mon–Fri)',
+  concise_mode: true,
+  google_connected: true,
+  kill_switch_active: false,
+}
 
 // Beat 3 Golden Path Proposal
 export const MOCK_PROPOSAL_GOLDEN_HASH =
@@ -80,6 +98,85 @@ Chief of Staff`,
 }
 
 let killSwitchState = false
+
+const MOCK_DEALS_RESPONSE: PipelineResponse = {
+  deals: [
+    {
+      id: 'D-1',
+      title: 'Acme Warehousing Automation',
+      contact_name: 'Raju Patel',
+      contact_email: 'raju@patel-warehousing.in',
+      stage: 'negotiation',
+      value_paise: 125000000, // ₹12,50,000
+      created_at: new Date(Date.now() - 864000000).toISOString(),
+      days_quiet: 3,
+      is_quiet: true,
+      last_interaction: new Date(Date.now() - 259200000).toISOString(),
+    },
+    {
+      id: 'D-2',
+      title: 'Apex Logistics Cloud Connector',
+      contact_name: 'Sunil Mehta',
+      contact_email: 'sunil@apexlogistics.in',
+      stage: 'lead',
+      value_paise: 250000000, // ₹25,00,000
+      created_at: new Date(Date.now() - 172800000).toISOString(),
+      days_quiet: 0,
+      is_quiet: false,
+      last_interaction: new Date(Date.now() - 86400000).toISOString(),
+    },
+    {
+      id: 'D-3',
+      title: 'QuickShip Solutions Inventory Sync',
+      contact_name: 'Priya Shah',
+      contact_email: 'priya@quickship.in',
+      stage: 'negotiation',
+      value_paise: 180000000, // ₹18,00,000
+      created_at: new Date(Date.now() - 604800000).toISOString(),
+      days_quiet: 4,
+      is_quiet: true,
+      last_interaction: new Date(Date.now() - 345600000).toISOString(),
+    },
+    {
+      id: 'D-4',
+      title: 'BlueDart Regional Franchise',
+      contact_name: 'Arjun Verma',
+      contact_email: 'arjun@bluedart-franchise.in',
+      stage: 'negotiation',
+      value_paise: 300000000, // ₹30,00,000
+      created_at: new Date(Date.now() - 259200000).toISOString(),
+      days_quiet: 1,
+      is_quiet: true,
+      last_interaction: new Date(Date.now() - 86400000).toISOString(),
+    },
+    {
+      id: 'D-5',
+      title: 'ExpressCargo Route Automation',
+      contact_name: 'Deepak Roy',
+      contact_email: 'deepak@expresscargo.in',
+      stage: 'active',
+      value_paise: 150000000, // ₹15,00,000
+      created_at: new Date(Date.now() - 345600000).toISOString(),
+      days_quiet: 0,
+      is_quiet: false,
+      last_interaction: new Date(Date.now() - 43200000).toISOString(),
+    },
+    {
+      id: 'D-6',
+      title: 'MegaFreight ERP Integration',
+      contact_name: 'Kavita Nair',
+      contact_email: 'kavita@megafreight.in',
+      stage: 'won',
+      value_paise: 450000000, // ₹45,00,000
+      created_at: new Date(Date.now() - 1209600000).toISOString(),
+      days_quiet: 0,
+      is_quiet: false,
+      last_interaction: new Date(Date.now() - 172800000).toISOString(),
+    },
+  ],
+  count: 6,
+  total_pipeline_paise: 1455000000,
+}
 
 export const handlers = [
   // POST /auth/login
@@ -146,6 +243,77 @@ export const handlers = [
     return HttpResponse.json(response, { status: 200 })
   }),
 
+  // GET /profile
+  http.get(`${API_BASE}/profile`, () => {
+    return HttpResponse.json({
+      ...mockProfile,
+      kill_switch_active: killSwitchState,
+    })
+  }),
+
+  // PUT /profile
+  http.put(`${API_BASE}/profile`, async (info) => {
+    const updates = (await info.request.json()) as ProfileUpdateRequest
+    mockProfile = {
+      ...mockProfile,
+      ...updates,
+      kill_switch_active: killSwitchState,
+    }
+    return HttpResponse.json(mockProfile)
+  }),
+
+  // POST /chat
+  http.post(`${API_BASE}/chat`, async (info) => {
+    const body = (await info.request.json()) as ChatMessageRequest
+    const msg = (body.message || '').trim()
+    const p = msg.toLowerCase()
+
+    let reply = `I've evaluated "${msg}" against your live workspace (WS-DEMO). You have 6 active deals totaling ₹1,45,50,000 and 1 pending approval for Raju Malhotra.`
+    let intent = 'GENERAL_ASSISTANCE'
+    let facts_cited = [
+      { label: 'Total Pipeline', value: '₹1,45,50,000', source: 'crm:deals' },
+      { label: 'Mandate Max Discount', value: '5%', source: 'mandate:clause_c2' },
+    ]
+    let guards_checked = ['G01', 'G04', 'G05', 'G06', 'G07']
+
+    if (p.includes('revenue') || p.includes('target') || p.includes('q4')) {
+      reply =
+        'Your Q4 Revenue Target is currently ₹18,80,000 / ₹35,00,000 (53.7%). The remaining ₹16,20,000 is tracked across 6 active deals in your pipeline.'
+      intent = 'PIPELINE_OVERVIEW'
+    } else if (p.includes('raju') || p.includes('discount') || p.includes('d-1')) {
+      reply =
+        'Deal D-1 (Raju Malhotra): Guard G08 flagged the unverified 20% verbal discount claim, and Guard G10 enforced the 5% mandate cap. Counter-offer PA-2026-10-15-001 is ready at ₹4,56,000 with Thursday 15:00–15:30 IST slot.'
+      intent = 'DEAL_D1_REVIEW'
+      facts_cited = [
+        { label: 'Counter-Offer', value: '₹4,56,000', source: 'mandate_c2:rate_card' },
+        { label: 'Annual Support', value: '₹60,000/yr', source: 'catalog:SUP-ANNUAL' },
+      ]
+      guards_checked = ['G01', 'G04', 'G07', 'G08', 'G10', 'G11']
+    } else if (p.includes('brief') || p.includes('standup')) {
+      reply =
+        'Founder Morning Brief (WS-DEMO): 1 autonomous action executed with verified receipt (rcpt_20261015_001), 1 decision pending founder review (PA-2026-10-15-001), and 3 quiet deals monitored.'
+      intent = 'FOUNDER_BRIEF'
+    }
+
+    const response: ChatMessageResponse = {
+      id: `chat_${Date.now()}`,
+      session_id: body.session_id || 's-1',
+      role: 'assistant',
+      reply,
+      timestamp: new Date().toISOString(),
+      intent,
+      facts_cited,
+      guards_checked,
+      suggested_prompts: [
+        'Summarize Q4 revenue target & deals',
+        "Review Raju Malhotra's 20% discount request",
+        'Generate Founder Morning Brief',
+      ],
+    }
+
+    return HttpResponse.json(response, { status: 200 })
+  }),
+
   // GET /approvals/pending (T09.4)
   http.get(`${API_BASE}/approvals/pending`, (info) => {
     const sessionId = info.request.headers.get('X-Session-ID')
@@ -191,7 +359,6 @@ export const handlers = [
     const { ref } = info.params
     const body = (await info.request.json()) as ApprovalDecisionRequest
 
-    // Check rendered_hash binding: MUST match backend exact hash!
     if (body.rendered_hash !== pendingProposal.rendered_hash) {
       return HttpResponse.json(
         {
@@ -207,7 +374,7 @@ export const handlers = [
 
     if (body.decision === 'approve') {
       pendingProposal.status = 'approved'
-      const executeAfter = new Date(Date.now() + 5000).toISOString() // 5-second undo window
+      const executeAfter = new Date(Date.now() + 5000).toISOString()
       const response: ApprovalDecisionResponse = {
         ref: String(ref),
         status: 'approved',
@@ -332,96 +499,17 @@ export const handlers = [
     return HttpResponse.json(receipt, { status: 200 })
   }),
 
-  // GET /pipeline/deals (T09.5 - Beat 0 6 deals)
+  // GET /pipeline/deals & GET /deals
   http.get(`${API_BASE}/pipeline/deals`, (info) => {
     const sessionId = info.request.headers.get('X-Session-ID')
-
     if (!sessionId || !mockSessions.has(sessionId)) {
-      return HttpResponse.json(
-        { error: { code: 401, message: 'Unauthorized' } },
-        { status: 401 }
-      )
+      return HttpResponse.json({ error: { code: 401, message: 'Unauthorized' } }, { status: 401 })
     }
+    return HttpResponse.json(MOCK_DEALS_RESPONSE, { status: 200 })
+  }),
 
-    const response: PipelineResponse = {
-      deals: [
-        {
-          id: 'D-1',
-          title: 'Acme Warehousing Automation',
-          contact_name: 'Raju Patel',
-          contact_email: 'raju@patel-warehousing.in',
-          stage: 'negotiation',
-          value_paise: 125000000, // ₹12,50,000
-          created_at: new Date(Date.now() - 864000000).toISOString(),
-          days_quiet: 3,
-          is_quiet: true,
-          last_interaction: new Date(Date.now() - 259200000).toISOString(),
-        },
-        {
-          id: 'D-2',
-          title: 'Apex Logistics Cloud Connector',
-          contact_name: 'Sunil Mehta',
-          contact_email: 'sunil@apexlogistics.in',
-          stage: 'lead',
-          value_paise: 250000000, // ₹25,00,000
-          created_at: new Date(Date.now() - 172800000).toISOString(),
-          days_quiet: 0,
-          is_quiet: false,
-          last_interaction: new Date(Date.now() - 86400000).toISOString(),
-        },
-        {
-          id: 'D-3',
-          title: 'QuickShip Solutions Inventory Sync',
-          contact_name: 'Priya Shah',
-          contact_email: 'priya@quickship.in',
-          stage: 'negotiation',
-          value_paise: 180000000, // ₹18,00,000
-          created_at: new Date(Date.now() - 604800000).toISOString(),
-          days_quiet: 4,
-          is_quiet: true,
-          last_interaction: new Date(Date.now() - 345600000).toISOString(),
-        },
-        {
-          id: 'D-4',
-          title: 'BlueDart Regional Franchise',
-          contact_name: 'Arjun Verma',
-          contact_email: 'arjun@bluedart-franchise.in',
-          stage: 'negotiation',
-          value_paise: 300000000, // ₹30,00,000
-          created_at: new Date(Date.now() - 259200000).toISOString(),
-          days_quiet: 1,
-          is_quiet: true,
-          last_interaction: new Date(Date.now() - 86400000).toISOString(),
-        },
-        {
-          id: 'D-5',
-          title: 'ExpressCargo Route Automation',
-          contact_name: 'Deepak Roy',
-          contact_email: 'deepak@expresscargo.in',
-          stage: 'active',
-          value_paise: 150000000, // ₹15,00,000
-          created_at: new Date(Date.now() - 345600000).toISOString(),
-          days_quiet: 0,
-          is_quiet: false,
-          last_interaction: new Date(Date.now() - 43200000).toISOString(),
-        },
-        {
-          id: 'D-6',
-          title: 'MegaFreight ERP Integration',
-          contact_name: 'Kavita Nair',
-          contact_email: 'kavita@megafreight.in',
-          stage: 'won',
-          value_paise: 450000000, // ₹45,00,000
-          created_at: new Date(Date.now() - 1209600000).toISOString(),
-          days_quiet: 0,
-          is_quiet: false,
-          last_interaction: new Date(Date.now() - 172800000).toISOString(),
-        },
-      ],
-      count: 6,
-    }
-
-    return HttpResponse.json(response, { status: 200 })
+  http.get(`${API_BASE}/deals`, () => {
+    return HttpResponse.json(MOCK_DEALS_RESPONSE, { status: 200 })
   }),
 
   // GET /settings (T09.5)
@@ -433,14 +521,14 @@ export const handlers = [
 
     const response: SystemSettings = {
       founder: {
-        name: 'Meera Nair',
-        email: 'meera@agency.in',
-        business_name: 'Nair Automation Labs',
-        timezone: 'Asia/Kolkata',
+        name: mockProfile.name,
+        email: mockProfile.email,
+        business_name: mockProfile.business_name,
+        timezone: mockProfile.timezone,
       },
       google_account: {
         connected: true,
-        email: 'meera@agency.in',
+        email: mockProfile.email,
         token_status: 'valid',
         expires_at: new Date(Date.now() + 3600000).toISOString(),
         scopes: [
@@ -461,17 +549,14 @@ export const handlers = [
 
   // POST /settings/kill-switch (T09.5)
   http.post(`${API_BASE}/settings/kill-switch`, async (info) => {
-    const sessionId = info.request.headers.get('X-Session-ID')
-    if (!sessionId || !mockSessions.has(sessionId)) {
-      return HttpResponse.json({ error: { code: 401, message: 'Unauthorized' } }, { status: 401 })
-    }
-
     const body = (await info.request.json()) as { active: boolean }
     killSwitchState = Boolean(body.active)
 
     return HttpResponse.json(
       {
+        status: 'ok',
         active: killSwitchState,
+        kill_switch_active: killSwitchState,
         message: killSwitchState
           ? 'Emergency kill switch active. All mandate sweeps halted.'
           : 'Kill switch released. Autonomous sweeps normal.',
@@ -519,6 +604,44 @@ export const handlers = [
       ],
       omitted_unlinked_events: 0,
       limitation: 'Mock response; not live operational data.',
+    }
+    return HttpResponse.json(response)
+  }),
+
+  // GET /brief (FounderBrief T13.2)
+  http.get(`${API_BASE}/brief`, () => {
+    const response: FounderBrief = {
+      workspace_id: 'WS-DEMO',
+      generated_at: new Date().toISOString(),
+      headline: '1 action executed, 1 decision pending.',
+      metrics: {
+        actions_executed_count: 1,
+        pending_approvals_count: pendingProposal.status === 'pending' ? 1 : 0,
+        escalations_count: 0,
+        blocked_actions_count: 0,
+        total_pipeline_value_paise: 1455000000,
+        estimated_founder_minutes_saved: 11,
+      },
+      items: [
+        {
+          id: 'item_rcpt_20261015_001',
+          category: 'executed_action',
+          summary: 'Email sent (Mandate M-2026-10-15 Clause C2) to raju@patel-warehousing.in',
+          status: 'executed',
+          authority_clause: 'Mandate M-2026-10-15 Clause C2',
+          evidence_receipt_id: 'rcpt_20261015_001',
+          evidence_action_ref: 'act_d1_01',
+          evidence_facts: [
+            { key: 'deal_value', label: 'Deal Value', value: '₹12,50,000', source: 'crm:deal_d1' },
+          ],
+          risk_flags: [],
+          recommended_followup: 'Await customer reply or review confirmation in activity feed',
+        },
+      ],
+      narration_text:
+        'Here is your Founder Brief for Nair Automation Studio. While you were away, 1 action was executed autonomously under your verified mandate.',
+      is_audio_available: false,
+      disclaimer: 'Source of truth: verified application receipts, audit log, and trusted server facts.',
     }
     return HttpResponse.json(response)
   }),

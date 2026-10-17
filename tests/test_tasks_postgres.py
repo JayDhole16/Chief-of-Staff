@@ -2,8 +2,12 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
-import psycopg
 import pytest
+
+try:
+    import psycopg
+except ImportError:  # pragma: no cover - optional when running without Postgres driver
+    psycopg = None  # type: ignore[assignment]
 
 from backend.services.tasks import (
     InvalidTaskTransitionError,
@@ -15,8 +19,8 @@ from backend.services.tasks import (
 
 DATABASE_URL = os.getenv("POSTGRES_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(
-    not DATABASE_URL,
-    reason="POSTGRES_TEST_DATABASE_URL is required for PostgreSQL integration tests",
+    not DATABASE_URL or psycopg is None,
+    reason="POSTGRES_TEST_DATABASE_URL and psycopg are required for PostgreSQL integration tests",
 )
 
 
@@ -28,7 +32,7 @@ def task_service():
         yield TaskService(repository), workspace
     finally:
         try:
-            if DATABASE_URL:
+            if DATABASE_URL and psycopg is not None:
                 with psycopg.connect(DATABASE_URL) as connection:
                     connection.execute(
                         "DELETE FROM tasks WHERE workspace_id = %s", (workspace,)

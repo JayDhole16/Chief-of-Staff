@@ -37,7 +37,7 @@ class PolicyInput:
             "floor_price_paise": self.floor_price_paise,
         }
         for name, value in numeric.items():
-            if not isinstance(value, int) or value < 0:
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
         if self.discount_pct > 100 or self.mandate_max_discount_pct > 100:
             raise ValueError("Discount percentages must be between 0 and 100")

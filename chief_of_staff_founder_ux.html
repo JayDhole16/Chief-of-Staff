@@ -206,7 +206,7 @@
 
     <!-- Bottom: Founder User Profile Avatar -->
     <div class="flex flex-col items-center gap-3">
-      <button onclick="switchMainTab('settings')" title="Ayush (Founder)" class="relative w-10 h-10 rounded-full bg-[#18212D] border border-[var(--border-subtle)] flex items-center justify-center text-sm font-bold text-white hover:border-[var(--emerald-glow)] transition-all group">
+      <button id="rail-tab-profile" onclick="switchMainTab('profile')" title="Ayush (Founder) · Profile Settings" class="relative w-10 h-10 rounded-full bg-[#18212D] border border-[var(--border-subtle)] flex items-center justify-center text-sm font-bold text-white hover:border-[var(--emerald-glow)] transition-all group">
         <span>A</span>
         <span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-[var(--emerald-glow)] ring-2 ring-[var(--bg-rail)]"></span>
         <span class="absolute left-16 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#111720] border border-[var(--border-subtle)] text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
@@ -815,6 +815,70 @@
       </div>
     </section>
 
+
+    <!-- ------------------------------------------------------------ -->
+    <!-- TAB VIEW 6: PROFILE SETTINGS                                  -->
+    <!-- ------------------------------------------------------------ -->
+    <section id="view-profile" class="hidden flex-1 flex flex-col h-full overflow-hidden p-6 space-y-5">
+      <div class="flex items-center justify-between pb-4 border-b border-[var(--border-hairline)]">
+        <div class="flex items-center gap-3.5">
+          <div class="w-12 h-12 rounded-full bg-[#0C1A14] border-2 border-[var(--emerald-glow)] flex items-center justify-center text-lg font-extrabold text-[var(--emerald-glow)]">
+            <span id="profile-avatar-letter">A</span>
+          </div>
+          <div>
+            <h2 class="text-xl font-bold text-white tracking-tight">Founder Profile & Account Settings</h2>
+            <p class="text-xs text-[var(--text-muted)]">Manage your executive identity, timezone, AI Chief of Staff persona, and session security</p>
+          </div>
+        </div>
+        <button onclick="switchMainTab('chat')" class="px-3 py-1.5 rounded-lg bg-[#141C26] hover:bg-[#1C2634] border border-[var(--border-hairline)] text-xs text-[var(--text-muted)] hover:text-white transition-colors">
+          ← Back to Chat
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto space-y-5 max-w-2xl">
+        <form onsubmit="saveFounderProfile(event)" class="p-5 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-hairline)] space-y-4">
+          <h3 class="text-sm font-bold text-white">Executive Identity & Workspace</h3>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <div>
+              <label class="block text-[var(--text-muted)] font-semibold mb-1">Full Name</label>
+              <input id="prof-name" type="text" value="Ayush" class="w-full bg-[#080B0F] border border-[var(--border-subtle)] rounded-lg px-3 py-2 text-white focus:border-[var(--emerald-primary)] focus:outline-none" />
+            </div>
+            <div>
+              <label class="block text-[var(--text-muted)] font-semibold mb-1">Role / Title</label>
+              <input id="prof-role" type="text" value="Founder & CEO" class="w-full bg-[#080B0F] border border-[var(--border-subtle)] rounded-lg px-3 py-2 text-white focus:border-[var(--emerald-primary)] focus:outline-none" />
+            </div>
+            <div>
+              <label class="block text-[var(--text-muted)] font-semibold mb-1">Verified Email</label>
+              <input id="prof-email" type="email" value="ayush@agency.in" class="w-full bg-[#080B0F] border border-[var(--border-subtle)] rounded-lg px-3 py-2 text-white focus:border-[var(--emerald-primary)] focus:outline-none" />
+            </div>
+            <div>
+              <label class="block text-[var(--text-muted)] font-semibold mb-1">Timezone</label>
+              <select id="prof-tz" class="w-full bg-[#080B0F] border border-[var(--border-subtle)] rounded-lg px-3 py-2 text-white focus:border-[var(--emerald-primary)] focus:outline-none">
+                <option value="Asia/Kolkata">Asia/Kolkata (IST, UTC+5:30)</option>
+                <option value="UTC">UTC</option>
+                <option value="Europe/London">Europe/London (BST/GMT)</option>
+                <option value="America/New_York">America/New_York (EST/EDT)</option>
+              </select>
+            </div>
+          </div>
+          <div class="flex justify-end pt-2">
+            <button type="submit" class="px-4 py-2 rounded-xl bg-[var(--emerald-primary)] hover:bg-[var(--emerald-glow)] text-black font-bold text-xs transition-colors">
+              Save Profile Settings
+            </button>
+          </div>
+        </form>
+
+        <div class="p-5 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-hairline)] flex items-center justify-between">
+          <div>
+            <h3 class="text-sm font-bold text-white">Active Session & Security</h3>
+            <p class="text-xs text-[var(--text-muted)]">Workspace: <code class="text-[var(--emerald-glow)]">WS-DEMO</code> · Google OAuth Token Vault: Sealed</p>
+          </div>
+          <button onclick="handleSignOut()" class="px-4 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-300 font-bold text-xs transition-colors">
+            Sign out
+          </button>
+        </div>
+      </div>
+    </section>
   </main>
 
   <!-- ============================================================== -->
@@ -908,11 +972,24 @@
     // Tab Navigation
     // ----------------------------------------------------------------
     function switchMainTab(tabId) {
-      state.currentTab = tabId;
-      
-      // If switching to chat and sidebar was collapsed, smoothly uncollapse it
-      if (tabId === 'chat' && state.sidebarCollapsed) {
+      const sidebar = document.getElementById('history-sidebar');
+      const toggleIcon = document.getElementById('sidebar-toggle-icon');
+
+      // Bug #1 Fix: If already on chat tab and user clicks chat icon, toggle collapse/expand
+      if (tabId === 'chat' && state.currentTab === 'chat') {
         toggleHistorySidebar();
+        return;
+      }
+
+      state.currentTab = tabId;
+
+      // Bug #2 Fix: Only show chat history sidebar on 'chat' tab; hide on all other tabs
+      if (tabId !== 'chat') {
+        if (sidebar) sidebar.classList.add('collapsed');
+      } else {
+        state.sidebarCollapsed = false;
+        if (sidebar) sidebar.classList.remove('collapsed');
+        if (toggleIcon) toggleIcon.setAttribute('data-lucide', 'panel-left-close');
       }
 
       // Update Rail button states
@@ -927,12 +1004,30 @@
       }
 
       // Hide all views, show targeted view
-      ['chat', 'deals', 'tasks', 'activity', 'settings'].forEach(id => {
+      ['chat', 'deals', 'tasks', 'activity', 'settings', 'profile'].forEach(id => {
         const el = document.getElementById(`view-${id}`);
         if (el) el.classList.toggle('hidden', id !== tabId);
       });
 
       if (tabId === 'deals') renderDeals();
+      if (tabId === 'chat') scrollChatToBottom();
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    function saveFounderProfile(e) {
+      e.preventDefault();
+      const nameInput = document.getElementById('prof-name');
+      const name = nameInput ? nameInput.value.trim() || 'Ayush' : 'Ayush';
+      const letter = document.getElementById('profile-avatar-letter');
+      if (letter) letter.innerText = name[0].toUpperCase();
+      appendAssistantNotification(`✓ Founder profile updated for ${name}.`);
+      switchMainTab('chat');
+    }
+
+    function handleSignOut() {
+      if (confirm('Sign out of Chief of Staff?')) {
+        window.location.reload();
+      }
     }
 
     // ----------------------------------------------------------------
@@ -997,9 +1092,14 @@
         el.classList.remove('active', 'bg-[#0C1B14]', 'border-[var(--emerald-primary)]/40', 'text-white');
         el.classList.add('text-[var(--text-muted)]');
       });
-      event.currentTarget.classList.add('active', 'bg-[#0C1B14]', 'border-[var(--emerald-primary)]/40', 'text-white');
-      event.currentTarget.classList.remove('text-[var(--text-muted)]');
-      switchMainTab('chat');
+      if (event && event.currentTarget) {
+        event.currentTarget.classList.add('active', 'bg-[#0C1B14]', 'border-[var(--emerald-primary)]/40', 'text-white');
+        event.currentTarget.classList.remove('text-[var(--text-muted)]');
+      }
+      if (state.currentTab !== 'chat') {
+        switchMainTab('chat');
+      }
+      scrollChatToBottom();
     }
 
     function filterChatHistory(query) {

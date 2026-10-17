@@ -3,11 +3,10 @@
  * DOES NOT cache API responses (keep them fresh).
  */
 
-const CACHE_NAME = 'chief-of-staff-v1'
+const CACHE_NAME = 'chief-of-staff-v2'
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/src/index.css',
   '/manifest.json',
 ]
 
@@ -30,17 +29,20 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          // Don't cache API responses
           return response
         })
         .catch(() => {
-          // Network error: return offline response
           return new Response(
             JSON.stringify({ error: { code: 'NETWORK', message: 'Offline' } }),
             { status: 503, headers: { 'Content-Type': 'application/json' } }
           )
         })
     )
+    return
+  }
+
+  // Only cache GET requests for static assets
+  if (request.method !== 'GET') {
     return
   }
 
@@ -53,7 +55,6 @@ self.addEventListener('fetch', (event) => {
 
       return fetch(request)
         .then((response) => {
-          // Only cache successful responses
           if (!response || response.status !== 200 || response.type === 'error') {
             return response
           }
@@ -66,7 +67,6 @@ self.addEventListener('fetch', (event) => {
           return response
         })
         .catch(() => {
-          // Return offline page or error response
           return new Response('Offline - page not cached', {
             status: 503,
             statusText: 'Service Unavailable',

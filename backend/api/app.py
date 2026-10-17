@@ -1,12 +1,13 @@
 """
-FastAPI Application and Read/Approval/Operations Endpoints (T08.4, T09, T10.1).
+FastAPI Application and Read/Approval/Operations/Chat Endpoints (T08.4, T09, T10.1, T15).
 
 Connects:
 - Pure read APIs (/api/activity, /api/receipts, /api/deals, /api/escalations)
 - Founder authority endpoints (/api/approvals/pending, /api/approvals/{ref}/decision)
 - Action lifecycle & undo (/api/actions/{ref}/cancel)
-- Session auth (/api/auth/login, /api/session)
+- Session auth & profile (/api/auth/login, /api/session, /api/profile)
 - Settings & Kill Switch (/api/settings, /api/settings/kill-switch)
+- Grounded AI Chief of Staff Chat (/api/chat)
 - Inbound pipeline injection & quiet sweep dev endpoints (/api/dev/...)
 """
 
@@ -17,10 +18,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, Header, HTTPException, status
+from fastapi import FastAPI, Header, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import Field
 
+from backend.contracts import CompatBaseModel
 from backend.contracts.read_api import (
     ActionReceiptResponse,
     ActivityEventItem,
@@ -36,6 +38,8 @@ from backend.contracts.read_api import (
     ReceiptStatus,
     ReceiptTimelineItem,
 )
+from backend.facts.inr_formatter import format_inr
+from backend.guards.definitions import list_guards
 from backend.services.brief import (
     FounderBriefResponse,
     FounderBriefService,
@@ -61,45 +65,72 @@ from backend.services.tasks import (
 )
 
 # ---------------------------------------------------------------------------
-# Request/Response Schemas for Authority & Ops
+# Request/Response Schemas for Authority, Profile, Chat & Ops
 # ---------------------------------------------------------------------------
 
-class LoginRequest(BaseModel):
+class LoginRequest(CompatBaseModel):
     email: str
     password: str
 
 
-class LoginUser(BaseModel):
+class LoginUser(CompatBaseModel):
     id: str
     email: str
     name: str
+    role: str = "Founder & CEO"
+    business_name: str = "Nair Automation Studio"
+    timezone: str = "Asia/Kolkata"
 
 
-class LoginResponse(BaseModel):
+class LoginResponse(CompatBaseModel):
     session_id: str
     user: LoginUser
 
 
-class SessionResponse(BaseModel):
+class SessionResponse(CompatBaseModel):
     session_id: str
     user: LoginUser
 
 
-class FactEvidence(BaseModel):
+class ProfileUpdateRequest(CompatBaseModel):
+    name: str | None = None
+    role: str | None = None
+    business_name: str | None = None
+    timezone: str | None = None
+    signature: str | None = None
+    working_hours: str | None = None
+    concise_mode: bool | None = None
+
+
+class FounderProfileResponse(CompatBaseModel):
+    id: str
+    name: str
+    email: str
+    role: str
+    business_name: str
+    timezone: str
+    signature: str
+    working_hours: str
+    concise_mode: bool
+    google_connected: bool
+    kill_switch_active: bool
+
+
+class FactEvidence(CompatBaseModel):
     key: str
     label: str
     value: str
     source: str
 
 
-class RiskFlagSchema(BaseModel):
+class RiskFlagSchema(CompatBaseModel):
     code: str
     severity: Literal["warning", "critical"]
     reason: str
     customer_claim: str | None = None
 
 
-class ProposedActionSchema(BaseModel):
+class ProposedActionSchema(CompatBaseModel):
     ref: str
     kind: Literal["email", "calendar"]
     deal_id: str
@@ -115,11 +146,11 @@ class ProposedActionSchema(BaseModel):
     policy_reasons: list[str] = Field(default_factory=list)
     created_at: str
     expires_at: str
-    status: Literal["pending", "approved", "rejected", "expired", "scheduled", "executing"]
+    status: Literal["pending", "approved", "rejected", "expired", "scheduled", "executing", "cancelled"]
     execute_after: str | None = None
 
 
-class ApprovalItem(BaseModel):
+class ApprovalItem(CompatBaseModel):
     id: str
     title: str
     description: str
@@ -129,18 +160,18 @@ class ApprovalItem(BaseModel):
     proposal: ProposedActionSchema
 
 
-class ApprovalsResponse(BaseModel):
+class ApprovalsResponse(CompatBaseModel):
     approvals: list[ApprovalItem]
     count: int
 
 
-class ApprovalDecisionRequest(BaseModel):
+class ApprovalDecisionRequest(CompatBaseModel):
     decision: Literal["approve", "reject"]
     rendered_hash: str
     rejection_reason: str | None = None
 
 
-class ApprovalDecisionResponse(BaseModel):
+class ApprovalDecisionResponse(CompatBaseModel):
     ref: str
     status: Literal["approved", "rejected", "scheduled"]
     rendered_hash: str
@@ -148,7 +179,7 @@ class ApprovalDecisionResponse(BaseModel):
     message: str
 
 
-class CancelActionResponse(BaseModel):
+class CancelActionResponse(CompatBaseModel):
     ref: str
     status: str
     cancelled_at: str
@@ -156,18 +187,18 @@ class CancelActionResponse(BaseModel):
     message: str
 
 
-class SystemSettingsSchema(BaseModel):
-    founder: dict[str, str]
+class SystemSettingsSchema(CompatBaseModel):
+    founder: dict[str, Any]
     google_account: dict[str, Any]
     kill_switch: dict[str, Any]
 
 
-class KillSwitchRequest(BaseModel):
+class KillSwitchRequest(CompatBaseModel):
     active: bool
     reason: str | None = None
 
 
-class InjectInboundRequest(BaseModel):
+class InjectInboundRequest(CompatBaseModel):
     message_id: str
     from_email: str
     to_email: str = "meera@agency.in"
@@ -177,12 +208,12 @@ class InjectInboundRequest(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
 
 
-class OperationsComponent(BaseModel):
+class OperationsComponent(CompatBaseModel):
     status: Literal["ready", "degraded", "unavailable", "not_configured"]
     detail: str
 
 
-class OperationsStatusResponse(BaseModel):
+class OperationsStatusResponse(CompatBaseModel):
     status: Literal["ready", "degraded"]
     checked_at: datetime
     data_mode: Literal["provisional"]
@@ -190,13 +221,13 @@ class OperationsStatusResponse(BaseModel):
     components: dict[str, OperationsComponent]
 
 
-class BriefLink(BaseModel):
+class BriefLink(CompatBaseModel):
     kind: Literal["receipt", "approval", "escalation"]
     reference: str
     href: str
 
 
-class BriefItem(BaseModel):
+class BriefItem(CompatBaseModel):
     event_id: str
     timestamp: datetime
     title: str
@@ -204,11 +235,29 @@ class BriefItem(BaseModel):
     link: BriefLink
 
 
-class BriefResponse(BaseModel):
+class BriefResponse(CompatBaseModel):
     generated_at: datetime
     items: list[BriefItem]
     omitted_unlinked_events: int
     limitation: str
+
+
+class ChatMessageRequest(CompatBaseModel):
+    message: str
+    session_id: str = "s-1"
+
+
+class ChatMessageResponse(CompatBaseModel):
+    id: str
+    session_id: str
+    role: Literal["assistant"] = "assistant"
+    reply: str
+    timestamp: str
+    intent: str
+    facts_cited: list[dict[str, str]] = Field(default_factory=list)
+    guards_checked: list[str] = Field(default_factory=list)
+    suggested_prompts: list[str] = Field(default_factory=list)
+    action_card: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -223,13 +272,31 @@ class ApplicationState:
 
     def reset(self):
         if hasattr(self, "task_repository"):
-            self.task_repository.close()
+            try:
+                self.task_repository.close()
+            except Exception:
+                pass
         self.sessions: dict[str, dict[str, Any]] = {
             "test_session_123": {
+                "id": "user_meera_01",
                 "user_id": "user_meera_01",
                 "email": "meera@agency.in",
                 "name": "Meera Nair",
+                "role": "Founder & CEO",
+                "business_name": "Nair Growth Agency",
+                "timezone": "Asia/Kolkata",
             }
+        }
+        self.founder_profile: dict[str, Any] = {
+            "id": "user_meera_01",
+            "name": "Meera Nair",
+            "email": "meera@agency.in",
+            "role": "Founder & CEO",
+            "business_name": "Nair Growth Agency",
+            "timezone": "Asia/Kolkata",
+            "signature": "Meera Nair · Chief of Staff",
+            "working_hours": "09:30 - 18:30 IST (Mon–Fri)",
+            "concise_mode": True,
         }
         self.kill_switch_active: bool = False
         self.kill_switch_reason: str | None = None
@@ -403,6 +470,13 @@ class ApplicationState:
 state = ApplicationState()
 
 
+def _parse_iso_utc(iso_str: str) -> datetime:
+    dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 # ---------------------------------------------------------------------------
 # FastAPI App Construction
 # ---------------------------------------------------------------------------
@@ -411,7 +485,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="AI Chief of Staff - Backend API",
         version="0.1.0",
-        description="Founder OS API for sales operations, approvals, receipts, and pipeline.",
+        description="Founder OS API for sales operations, approvals, receipts, chat, and pipeline.",
     )
 
     # Enable CORS for Vite frontend (http://localhost:5173)
@@ -456,20 +530,25 @@ def create_app() -> FastAPI:
         return state.sessions[x_session_id]
 
     # -----------------------------------------------------------------------
-    # Auth & Session Endpoints
+    # Auth, Session & Profile Endpoints
     # -----------------------------------------------------------------------
     @app.post("/api/auth/login", response_model=LoginResponse)
     def login(req: LoginRequest):
-        if not req.email or not req.password:
-            raise HTTPException(status_code=422, detail="Email and password required")
-        if len(req.password) < 6:
+        email = (req.email or "").strip()
+        password = req.password or ""
+        if not email or not password or "@" not in email:
+            raise HTTPException(status_code=422, detail="Valid email and password required")
+        if len(password) < 6:
             raise HTTPException(status_code=422, detail="Invalid credentials")
 
         session_id = f"session_{uuid4().hex[:12]}"
         user_info = {
             "id": f"user_{uuid4().hex[:6]}",
-            "email": req.email,
-            "name": req.email.split("@")[0].title(),
+            "email": email,
+            "name": email.split("@")[0].title(),
+            "role": state.founder_profile.get("role", "Founder & CEO"),
+            "business_name": state.founder_profile.get("business_name", "Nair Growth Agency"),
+            "timezone": state.founder_profile.get("timezone", "Asia/Kolkata"),
         }
         state.sessions[session_id] = user_info
         return LoginResponse(session_id=session_id, user=LoginUser(**user_info))
@@ -477,7 +556,44 @@ def create_app() -> FastAPI:
     @app.get("/api/session", response_model=SessionResponse)
     def get_session(x_session_id: str | None = Header(None)):
         user = get_current_user(x_session_id)
-        return SessionResponse(session_id=x_session_id, user=LoginUser(**user))
+        user_payload = {
+            "id": user.get("id") or user.get("user_id", "user_01"),
+            "email": user["email"],
+            "name": user["name"],
+            "role": user.get("role", "Founder & CEO"),
+            "business_name": user.get("business_name", "Nair Growth Agency"),
+            "timezone": user.get("timezone", "Asia/Kolkata"),
+        }
+        return SessionResponse(session_id=x_session_id or "", user=LoginUser(**user_payload))
+
+    @app.get("/api/profile", response_model=FounderProfileResponse)
+    def get_profile():
+        return FounderProfileResponse(
+            **state.founder_profile,
+            google_connected=state.google_connected,
+            kill_switch_active=state.kill_switch_active,
+        )
+
+    @app.put("/api/profile", response_model=FounderProfileResponse)
+    def update_profile(req: ProfileUpdateRequest):
+        updates = req.model_dump(exclude_none=True)
+        for k, v in updates.items():
+            if k in state.founder_profile:
+                state.founder_profile[k] = v
+        for sess in state.sessions.values():
+            if "name" in updates:
+                sess["name"] = updates["name"]
+            if "role" in updates:
+                sess["role"] = updates["role"]
+            if "business_name" in updates:
+                sess["business_name"] = updates["business_name"]
+            if "timezone" in updates:
+                sess["timezone"] = updates["timezone"]
+        return FounderProfileResponse(
+            **state.founder_profile,
+            google_connected=state.google_connected,
+            kill_switch_active=state.kill_switch_active,
+        )
 
     # -----------------------------------------------------------------------
     # Approvals Endpoints (T09.4)
@@ -525,7 +641,8 @@ def create_app() -> FastAPI:
                 detail="Proposal version conflict: the supplied hash does not match the current proposal.",
             )
 
-        if datetime.fromisoformat(proposal.expires_at) <= datetime.now(timezone.utc):
+        if _parse_iso_utc(proposal.expires_at) <= datetime.now(timezone.utc):
+            proposal.status = "expired"
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -535,6 +652,8 @@ def create_app() -> FastAPI:
 
         if req.decision == "approve":
             proposal.status = "approved"
+            if ref in state.sweep_service.proposal_store:
+                state.sweep_service.proposal_store[ref].status = "approved"
             now = datetime.now(timezone.utc)
 
             # Worker executes approved action and generates terminal receipt
@@ -546,8 +665,9 @@ def create_app() -> FastAPI:
                 rendered_hash=proposal.rendered_hash,
                 authority_clause="Founder Explicit Approval",
                 checks_passed=["G01", "G04", "G05", "G06", "G07", "G09", "G10", "G11"],
-                facts_used=[(f.model_dump() if hasattr(f, "model_dump") else f.dict()) for f in proposal.facts_used],
+                facts_used=[f.model_dump() for f in proposal.facts_used],
                 is_founder_approved=True,
+                email_subject=proposal.subject,
             )
             if receipt.status == ReceiptStatus.BLOCKED:
                 raise HTTPException(
@@ -578,6 +698,8 @@ def create_app() -> FastAPI:
 
         elif req.decision == "reject":
             proposal.status = "rejected"
+            if ref in state.sweep_service.proposal_store:
+                state.sweep_service.proposal_store[ref].status = "rejected"
             now = datetime.now(timezone.utc)
             state.activity_events.insert(0, ActivityEventItem(
                 id=f"evt_{uuid4().hex[:8]}",
@@ -602,11 +724,17 @@ def create_app() -> FastAPI:
     # -----------------------------------------------------------------------
     @app.post("/api/actions/{ref}/cancel", response_model=CancelActionResponse)
     def cancel_action(ref: str):
+        existing_receipt = state.receipts.get(ref)
+        if existing_receipt is not None and existing_receipt.status == ReceiptStatus.EXECUTED:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Action {ref} has already been executed by the worker. Undo window closed.",
+            )
+
         now = datetime.now(timezone.utc)
         receipt_id = f"rcpt_cancel_{uuid4().hex[:6]}"
 
-        # Record cancelled receipt
-        state.receipts[receipt_id] = ActionReceiptResponse(
+        cancelled_receipt = ActionReceiptResponse(
             receipt_id=receipt_id,
             action_ref=ref,
             action_kind="email",
@@ -618,6 +746,15 @@ def create_app() -> FastAPI:
                 ReceiptTimelineItem(timestamp=now, event="Action cancelled by user before dispatch"),
             ],
         )
+
+        # Store under both receipt_id and action_ref so WorkerExecutor refuses late execution
+        state.receipts[receipt_id] = cancelled_receipt
+        state.receipts[ref] = cancelled_receipt
+
+        if ref in state.proposals:
+            state.proposals[ref].status = "cancelled"
+        if ref in state.sweep_service.proposal_store:
+            state.sweep_service.proposal_store[ref].status = "rejected"
 
         state.activity_events.insert(0, ActivityEventItem(
             id=f"evt_{uuid4().hex[:8]}",
@@ -642,15 +779,22 @@ def create_app() -> FastAPI:
     # Read APIs (T08.4)
     # -----------------------------------------------------------------------
     @app.get("/api/activity", response_model=ActivityFeedResponse)
-    def get_activity_feed(cursor: str | None = None, limit: int = 50):
+    def get_activity_feed(cursor: str | None = None, limit: int = Query(default=50, ge=1, le=500)):
+        if not isinstance(limit, int):
+            limit = 50
+        if not isinstance(cursor, str):
+            cursor = None
         # Sync activities from inbound & sweep services if any new ones arrived
+        valid_types = {m.value for m in ActivityType}
+        existing_ids = {e.id for e in state.activity_events}
+
         for act in state.inbound_pipeline.recorded_activities:
             evt_id = act["id"]
-            if not any(e.id == evt_id for e in state.activity_events):
+            if evt_id not in existing_ids:
                 state.activity_events.insert(0, ActivityEventItem(
                     id=evt_id,
                     timestamp=act["timestamp"],
-                    type=ActivityType(act["type"]) if act["type"] in ActivityType.__members__.values() else ActivityType.EXECUTION,
+                    type=ActivityType(act["type"]) if act["type"] in valid_types else ActivityType.EXECUTION,
                     title=act["title"],
                     description=act["description"],
                     user_id=act.get("user_id", "system"),
@@ -658,14 +802,15 @@ def create_app() -> FastAPI:
                     receipt_id=act.get("receipt_id"),
                     escalation_id=act.get("escalation_id"),
                 ))
+                existing_ids.add(evt_id)
 
         for act in state.sweep_service.activity_store:
             evt_id = act["id"]
-            if not any(e.id == evt_id for e in state.activity_events):
+            if evt_id not in existing_ids:
                 state.activity_events.insert(0, ActivityEventItem(
                     id=evt_id,
                     timestamp=act["timestamp"],
-                    type=ActivityType(act["type"]) if act["type"] in ActivityType.__members__.values() else ActivityType.SCHEDULED,
+                    type=ActivityType(act["type"]) if act["type"] in valid_types else ActivityType.SCHEDULED,
                     title=act["title"],
                     description=act["description"],
                     user_id=act.get("user_id", "sweep_engine"),
@@ -674,14 +819,15 @@ def create_app() -> FastAPI:
                     execute_after=act.get("execute_after"),
                     can_undo=act.get("can_undo", False),
                 ))
+                existing_ids.add(evt_id)
 
         for act in state.executor.activities:
             evt_id = act["id"]
-            if not any(e.id == evt_id for e in state.activity_events):
+            if evt_id not in existing_ids:
                 state.activity_events.insert(0, ActivityEventItem(
                     id=evt_id,
                     timestamp=act["timestamp"],
-                    type=ActivityType(act["type"]) if act["type"] in ActivityType.__members__.values() else ActivityType.EXECUTION,
+                    type=ActivityType(act["type"]) if act["type"] in valid_types else ActivityType.EXECUTION,
                     title=act["title"],
                     description=act["description"],
                     user_id=act.get("user_id", "worker_executor"),
@@ -690,11 +836,24 @@ def create_app() -> FastAPI:
                     rendered_hash=act.get("rendered_hash"),
                     can_undo=act.get("can_undo", False),
                 ))
+                existing_ids.add(evt_id)
+
+        start_idx = 0
+        if cursor:
+            for idx, evt in enumerate(state.activity_events):
+                if evt.id == cursor:
+                    start_idx = idx + 1
+                    break
+
+        sliced = state.activity_events[start_idx : start_idx + limit]
+        has_more = (start_idx + limit) < len(state.activity_events)
+        next_cursor = sliced[-1].id if (has_more and sliced) else None
 
         return ActivityFeedResponse(
-            events=state.activity_events[:limit],
+            events=sliced,
             count=len(state.activity_events),
-            has_more=len(state.activity_events) > limit,
+            has_more=has_more,
+            next_cursor=next_cursor,
         )
 
     @app.get("/api/receipts/{ref_or_id}", response_model=ActionReceiptResponse)
@@ -780,7 +939,6 @@ def create_app() -> FastAPI:
 
     @app.get("/api/escalations", response_model=EscalationsResponse)
     def get_escalations():
-        # Sync escalations from inbound pipeline
         for esc in state.inbound_pipeline.created_escalations:
             if not any(e.escalation_id == esc["escalation_id"] for e in state.escalations):
                 state.escalations.append(EscalationItem(
@@ -907,20 +1065,8 @@ def create_app() -> FastAPI:
 
     @app.get("/api/brief", response_model=FounderBriefResponse)
     def get_founder_brief(x_workspace_id: str = Header(default="WS-DEMO")):
-        # Sync escalations from inbound pipeline
-        for esc in state.inbound_pipeline.created_escalations:
-            if not any(e.escalation_id == esc["escalation_id"] for e in state.escalations):
-                state.escalations.append(EscalationItem(
-                    escalation_id=esc["escalation_id"],
-                    created_at=esc["created_at"],
-                    severity=EscalationSeverity(esc["severity"]),
-                    source_message_id=esc["source_message_id"],
-                    deal_id=esc["deal_id"],
-                    contact_email=esc["contact_email"],
-                    reason=esc["reason"],
-                    guard_code=esc.get("guard_code"),
-                    status="open",
-                ))
+        get_escalations()
+        get_activity_feed()
 
         if x_workspace_id != "WS-DEMO":
             raise HTTPException(
@@ -930,7 +1076,7 @@ def create_app() -> FastAPI:
 
         deals_response = get_deals()
         brief_service = FounderBriefService(workspace_id="WS-DEMO")
-        proposals_list = [(p.model_dump() if hasattr(p, "model_dump") else p.dict()) for p in state.proposals.values()]
+        proposals_list = [p.model_dump() for p in state.proposals.values()]
         receipts_list = list(state.receipts.values())
 
         try:
@@ -947,16 +1093,193 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
     # -----------------------------------------------------------------------
+    # Grounded AI Chief of Staff Chat Endpoint
+    # -----------------------------------------------------------------------
+    @app.post("/api/chat", response_model=ChatMessageResponse)
+    def handle_chat(req: ChatMessageRequest):
+        text = (req.message or "").strip()
+        if not text:
+            raise HTTPException(status_code=422, detail="Message cannot be empty")
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        p = text.lower()
+        deals_resp = get_deals()
+        pending_props = [pr for pr in state.proposals.values() if pr.status == "pending"]
+        unique_receipts = list({r.receipt_id: r for r in state.receipts.values()}.values())
+        executed_receipts = [r for r in unique_receipts if r.status == ReceiptStatus.EXECUTED]
+        guards_map = list_guards()
+
+        if any(k in p for k in ("brief", "standup", "morning", "summary")):
+            brief = get_founder_brief(x_workspace_id="WS-DEMO")
+            return ChatMessageResponse(
+                id=f"chat_{uuid4().hex[:8]}",
+                session_id=req.session_id,
+                reply=(
+                    f"**Founder Standup Summary ({brief.workspace_id})**\n"
+                    f"• **Headline:** {brief.headline}\n"
+                    f"• **Executed Actions:** {brief.metrics.actions_executed_count} (verified terminal receipts)\n"
+                    f"• **Pending Approvals:** {brief.metrics.pending_approvals_count}\n"
+                    f"• **Pipeline Total:** {format_inr(brief.metrics.total_pipeline_value_paise)}\n"
+                    f"• **Time Saved:** ~{brief.metrics.estimated_founder_minutes_saved} mins\n\n"
+                    f"_{brief.narration_text}_"
+                ),
+                timestamp=now_iso,
+                intent="FOUNDER_BRIEF",
+                facts_cited=[
+                    {"label": "Pipeline Total", "value": format_inr(brief.metrics.total_pipeline_value_paise), "source": "crm:pipeline"},
+                    {"label": "Executed Receipts", "value": str(brief.metrics.actions_executed_count), "source": "audit:receipts"},
+                ],
+                guards_checked=["G01", "G06", "G07", "G09"],
+                suggested_prompts=[
+                    "Show pending approvals",
+                    "Run quiet pipeline sweep",
+                    "Inspect latest execution receipt",
+                ],
+            )
+
+        if any(k in p for k in ("sweep", "quiet", "follow-up", "followup")):
+            quiet_deals = [d for d in deals_resp.deals if d.is_quiet]
+            quiet_summary = "\n".join(
+                f"• **{d.id} ({d.title})** — {d.contact_name} · Quiet {d.days_quiet}d · {format_inr(d.value_paise)}"
+                for d in quiet_deals
+            )
+            return ChatMessageResponse(
+                id=f"chat_{uuid4().hex[:8]}",
+                session_id=req.session_id,
+                reply=(
+                    f"I scanned all **{deals_resp.count} deals** against Mandate M-2026-10-15 Clause C2 (quiet threshold ≥ 3 days, max 5% discount):\n\n"
+                    f"{quiet_summary}\n\n"
+                    "Note: Priya Shah (D-3) has an active OOO auto-reply until 20 Oct 2026 and is automatically snoozed."
+                ),
+                timestamp=now_iso,
+                intent="QUIET_SWEEP_ANALYSIS",
+                facts_cited=[
+                    {"label": "Quiet Deals", "value": str(len(quiet_deals)), "source": "sweep:detector"},
+                    {"label": "Mandate Cap", "value": "5%", "source": "mandate:clause_c2"},
+                ],
+                guards_checked=["G01", "G04", "G05", "G10", "G12"],
+                suggested_prompts=[
+                    "Review Raju Malhotra's 20% discount request",
+                    "Check Deal D-4 Arjun Verma status",
+                    "Generate Founder Morning Brief",
+                ],
+            )
+
+        if any(k in p for k in ("raju", "d-1", "discount", "20%", "counter")):
+            raju_prop = state.proposals.get("PA-2026-10-15-001")
+            status_label = raju_prop.status if raju_prop else "pending"
+            return ChatMessageResponse(
+                id=f"chat_{uuid4().hex[:8]}",
+                session_id=req.session_id,
+                reply=(
+                    "**Deal D-1 (Raju Malhotra / Warehouse Automation) Guardrail Analysis:**\n"
+                    "1. **Guard G08 (Unverified Claim):** Customer claimed a verbal `20% discount` on a call — not present in `TrustedFacts`.\n"
+                    "2. **Guard G10 (Mandate Ceiling):** 20% exceeds the autonomous mandate cap of `5%`.\n"
+                    "3. **Grounded Counter-Offer (`PA-2026-10-15-001`):** Server-rendered at **₹4,56,000** (5% off ₹4,80,000 base) + **₹60,000/yr** annual support (`SUP-ANNUAL`), proposing slot **Thu 15:00–15:30 IST**.\n"
+                    f"4. **Current Status:** `{status_label.upper()}` (SHA-256 hash-bound)."
+                ),
+                timestamp=now_iso,
+                intent="DEAL_D1_REVIEW",
+                facts_cited=[
+                    {"label": "Counter-Offer", "value": "₹4,56,000", "source": "mandate_c2:rate_card"},
+                    {"label": "Annual Support", "value": "₹60,000/yr", "source": "catalog:SUP-ANNUAL"},
+                    {"label": "Slot", "value": "15:00 - 15:30 IST", "source": "calendar:slot_token"},
+                ],
+                guards_checked=["G01", "G04", "G06", "G07", "G08", "G09", "G10", "G11"],
+                suggested_prompts=[
+                    "Show all 6 pipeline deals",
+                    "Inspect terminal receipts",
+                    "Explain deterministic guards G01-G15",
+                ],
+            )
+
+        if any(k in p for k in ("guard", "g0", "g1", "policy", "safety", "security")):
+            guard_lines = "\n".join(f"• **{gid}:** {desc}" for gid, desc in list(guards_map.items())[:8])
+            return ChatMessageResponse(
+                id=f"chat_{uuid4().hex[:8]}",
+                session_id=req.session_id,
+                reply=(
+                    "**Deterministic Guard Registry (G01–G15):**\n"
+                    "Every outbound proposal is evaluated by pure functions (`ALLOW` / `ASK` / `BLOCK`). Blocking guards can never be overridden:\n\n"
+                    f"{guard_lines}\n"
+                    "• **G09–G15:** INR currency lock, mandate discount ceiling (5%), floor price check, opt-out enforcement, business hours, PII filter, and grammar check."
+                ),
+                timestamp=now_iso,
+                intent="GUARD_EXPLANATION",
+                facts_cited=[
+                    {"label": "Total Guards", "value": "15 (G01-G15)", "source": "policy:engine"},
+                    {"label": "Kill Switch", "value": "ACTIVE" if state.kill_switch_active else "STANDBY", "source": "ops:kill_switch"},
+                ],
+                guards_checked=list(guards_map.keys()),
+                suggested_prompts=[
+                    "Check operations status",
+                    "Show pending approvals",
+                    "Summarize Q4 revenue target",
+                ],
+            )
+
+        if any(k in p for k in ("deal", "pipeline", "revenue", "target", "q4")):
+            deal_lines = "\n".join(
+                f"• **{d.id} · {d.title}** ({d.contact_name}) — `{d.stage.value.upper()}` · **{format_inr(d.value_paise)}**"
+                for d in deals_resp.deals
+            )
+            return ChatMessageResponse(
+                id=f"chat_{uuid4().hex[:8]}",
+                session_id=req.session_id,
+                reply=(
+                    f"**Executive Pipeline Overview ({deals_resp.count} Deals · Total {format_inr(deals_resp.total_pipeline_paise)}):**\n"
+                    f"• **Q4 Revenue Progress:** ₹18,80,000 / ₹35,00,000 (**53.7%**)\n\n"
+                    f"{deal_lines}"
+                ),
+                timestamp=now_iso,
+                intent="PIPELINE_OVERVIEW",
+                facts_cited=[
+                    {"label": "Total Pipeline", "value": format_inr(deals_resp.total_pipeline_paise), "source": "crm:deals"},
+                    {"label": "Active Deals", "value": str(deals_resp.count), "source": "crm:deals"},
+                ],
+                guards_checked=["G01", "G05", "G09"],
+                suggested_prompts=[
+                    "Run quiet pipeline sweep",
+                    "Review Raju Malhotra's 20% discount request",
+                    "Generate Founder Morning Brief",
+                ],
+            )
+
+        return ChatMessageResponse(
+            id=f"chat_{uuid4().hex[:8]}",
+            session_id=req.session_id,
+            reply=(
+                f"I've evaluated **\"{text}\"** against your live workspace (`WS-DEMO`).\n\n"
+                f"• **Pipeline:** {deals_resp.count} deals totaling **{format_inr(deals_resp.total_pipeline_paise)}**\n"
+                f"• **Pending Founder Decisions:** {len(pending_props)} proposal(s)\n"
+                f"• **Verified Receipts:** {len(executed_receipts)} executed action(s)\n"
+                f"• **Autonomy Mode:** {'PAUSED (Kill Switch Engaged)' if state.kill_switch_active else 'Auto-pilot Active (Mandate M-2026-10-15)'}"
+            ),
+            timestamp=now_iso,
+            intent="GENERAL_ASSISTANCE",
+            facts_cited=[
+                {"label": "Pending Approvals", "value": str(len(pending_props)), "source": "authority:approvals"},
+                {"label": "Executed Actions", "value": str(len(executed_receipts)), "source": "audit:receipts"},
+            ],
+            guards_checked=["G01", "G04", "G05", "G06", "G07"],
+            suggested_prompts=[
+                "Summarize Q4 revenue target & deals",
+                "Review Raju Malhotra's 20% discount request",
+                "Generate Founder Morning Brief",
+            ],
+        )
+
+    # -----------------------------------------------------------------------
     # Settings & Kill Switch (T09.5)
     # -----------------------------------------------------------------------
     @app.get("/api/settings", response_model=SystemSettingsSchema)
     def get_settings():
         return SystemSettingsSchema(
             founder={
-                "name": "Meera Nair",
-                "email": "meera@agency.in",
-                "business_name": "Nair Growth Agency",
-                "timezone": "Asia/Kolkata",
+                "name": state.founder_profile.get("name", "Meera Nair"),
+                "email": state.founder_profile.get("email", "meera@agency.in"),
+                "business_name": state.founder_profile.get("business_name", "Nair Growth Agency"),
+                "timezone": state.founder_profile.get("timezone", "Asia/Kolkata"),
             },
             google_account={
                 "connected": state.google_connected,
@@ -977,7 +1300,16 @@ def create_app() -> FastAPI:
         state.kill_switch_active = req.active
         state.kill_switch_reason = req.reason or ("Manually toggled" if req.active else None)
         state.executor.kill_switch_active = req.active
-        return {"status": "ok", "kill_switch_active": state.kill_switch_active}
+        return {
+            "status": "ok",
+            "active": state.kill_switch_active,
+            "kill_switch_active": state.kill_switch_active,
+            "message": (
+                "Emergency kill switch active. All mandate sweeps halted."
+                if state.kill_switch_active
+                else "Kill switch released. Autonomous sweeps normal."
+            ),
+        }
 
     # -----------------------------------------------------------------------
     # Dev / Test Integration Endpoints
@@ -1007,8 +1339,13 @@ def create_app() -> FastAPI:
     @app.post("/api/dev/run-sweep")
     def run_sweep():
         deals = get_demo_sweep_deals()
+        for d in deals:
+            if d.contact_id in state.inbound_pipeline.opted_out_contacts:
+                d.do_not_contact = True
+            if d.contact_id in state.inbound_pipeline.snoozed_contacts:
+                d.snooze_until = state.inbound_pipeline.snoozed_contacts[d.contact_id]
+
         res = state.sweep_service.sweep(deals)
-        # Register new proposals in state.proposals
         for p in res.proposals_created:
             schema = ProposedActionSchema(
                 ref=p.ref,

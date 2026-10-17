@@ -8,10 +8,10 @@ import hmac
 import json
 import time
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from backend.contracts import CompatBaseModel
 
 
 class SlotTokenInvalidError(Exception):
@@ -29,12 +29,11 @@ class SlotTokenScopeMismatchError(Exception):
     pass
 
 
-class Slot(BaseModel):
+class Slot(CompatBaseModel):
     """
     Slot representation returned by find_slots.
     Implements BACKEND_SCHEMA §7.8.
     """
-    model_config = ConfigDict(extra="forbid")
 
     label: str  # e.g. "S1"
     slot_id: str  # signed token (sl_<payload>.<sig>)
@@ -70,6 +69,15 @@ def mint_slot_token(
     sl_ + base64url(JSON {"t": task_uuid, "s": start_iso, "e": end_iso, "x": exp_epoch})
     + . + base64url(HMAC-SHA256(SLOT_SIGNING_KEY, json))
     """
+    if not str(task_id).strip():
+        raise ValueError("task_id must be non-empty")
+    if not signing_key or not signing_key.strip():
+        raise ValueError("signing_key must be non-empty")
+    if end <= start:
+        raise ValueError("Slot end time must be after start time")
+    if validity_seconds <= 0:
+        raise ValueError("validity_seconds must be positive")
+
     if now_epoch is None:
         now_epoch = int(time.time())
 
@@ -106,12 +114,14 @@ def verify_slot_token(
 
     Returns parsed payload dict {"t": task_id, "s": start_iso, "e": end_iso, "x": exp_epoch}.
     """
-    if not token or not token.startswith("sl_") or "." not in token:
+    if not token or not isinstance(token, str) or not token.startswith("sl_") or "." not in token:
         raise SlotTokenInvalidError("Malformed slot token format")
+    if not signing_key:
+        raise SlotTokenInvalidError("Missing slot token signing key")
 
     token_body = token[3:]  # Strip sl_
     parts = token_body.split(".", 1)
-    if len(parts) != 2:
+    if len(parts) != 2 or not parts[0] or not parts[1]:
         raise SlotTokenInvalidError("Malformed slot token structure")
 
     payload_b64, sig_b64 = parts[0], parts[1]
@@ -131,6 +141,13 @@ def verify_slot_token(
     except Exception as e:
         raise SlotTokenInvalidError(f"JSON decode failed: {e}") from e
 
+    if not isinstance(payload, dict) or not {"t", "s", "e", "x"}.issubset(payload.keys()):
+        raise SlotTokenInvalidError("Slot token payload missing required fields")
+
+    exp_epoch = payload.get("x")
+    if not isinstance(exp_epoch, (int, float)) or isinstance(exp_epoch, bool):
+        raise SlotTokenInvalidError("Slot token expiry 'x' must be numeric")
+
     # Check task scope isolation
     if str(payload.get("t")) != str(expected_task_id):
         raise SlotTokenScopeMismatchError(
@@ -141,9 +158,7 @@ def verify_slot_token(
     if now_epoch is None:
         now_epoch = int(time.time())
 
-    exp_epoch = payload.get("x", 0)
     if now_epoch > exp_epoch:
         raise SlotTokenExpiredError(f"Slot token expired at {exp_epoch}, current time {now_epoch}")
 
     return payload
-

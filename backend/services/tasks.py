@@ -329,10 +329,14 @@ class TaskService:
             "source_message_id": source_message_id,
             "kind": kind,
         }
-        missing = [name for name, value in required.items() if not value or not value.strip()]
+        missing = [
+            name
+            for name, value in required.items()
+            if not isinstance(value, str) or not value.strip()
+        ]
         if missing:
             raise ValueError(f"Task fields must be non-empty: {', '.join(missing)}")
-        if deal_version < 1:
+        if not isinstance(deal_version, int) or isinstance(deal_version, bool) or deal_version < 1:
             raise ValueError("deal_version must be a positive integer")
         now = datetime.now(timezone.utc).isoformat()
         return self._repository.create(
@@ -363,8 +367,12 @@ class TaskService:
         expected_version: int,
         status: TaskStatus,
     ) -> TaskRecord:
+        if not isinstance(expected_version, int) or isinstance(expected_version, bool) or expected_version < 1:
+            raise ValueError("expected_version must be a positive integer")
         current = self._repository.get(workspace_id, task_id)
-        if status not in _ALLOWED_TRANSITIONS[current.status]:
+        if current.version != expected_version:
+            raise TaskConflictError(f"Task {task_id} is not at version {expected_version}")
+        if status not in _ALLOWED_TRANSITIONS.get(current.status, frozenset()):
             raise InvalidTaskTransitionError(
                 f"Cannot transition task from {current.status} to {status}"
             )
