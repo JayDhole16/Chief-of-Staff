@@ -21,9 +21,17 @@ build/
 # Local planning artifacts synced from Cloud; not intended for version control.
 /Planing-by-rehan/
 DEVELOPMENT_PLAN.md
-
 # Temporary directories and intermediate artifacts
 /tmp/
+tmp/
+tmp/update_memo.pdf
+tmp/REMAINING_WORK_REPORT.original.pdf
+tmp/compose_up.log
+tmp/frontend_tests.log
+tmp/make_update_pdf.py
+tmp/pytest.log
+tmp/uvicorn.log
+tmp/vite.log
 
 # Editor and agent configurations
 .vscode/
