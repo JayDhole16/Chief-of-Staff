@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "chief-of-staff"
 version = "0.1.0"
-description = "Mobile-first PWA for deal management and approval automation"
+description = "AI chief of staff for founders: deals, hash-bound approvals, BYOK LLM keys"
 requires-python = ">=3.12"
 license = {text = "MIT"}
 authors = [
@@ -23,6 +23,8 @@ dependencies = [
     "httpx>=0.25.2",
     "python-multipart>=0.0.6",
     "python-dotenv>=1.0.0",
+    "anthropic>=1.3.0",
+    "cryptography>=42.0.0",
 ]
 
 [project.optional-dependencies]
