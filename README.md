@@ -1,66 +1,106 @@
 # Chief-of-Staff
 
-An AI chief-of-staff for founders: an inbound message is ingested, resolved against
-your deal pipeline, run through deterministic guards and a pure policy engine, and
-turned into a hash-bound proposal you approve with one tap; only then does the
-executor act and issue a receipt.
+An AI chief of staff for founders. Track your deals, see which ones are going quiet,
+and let the assistant draft grounded follow-up emails. Every draft is bound to a
+SHA-256 hash of its exact text and checked by 15 deterministic policy guards. Nothing
+is sent until you approve that exact text.
 
-**Honest status:** the demo runs on **fake adapters (deterministic)** — Gmail,
-Calendar and the database are in-memory stand-ins. No live external write happens
-anywhere in this repository, the live golden path reports its prerequisites as
-blocked, and the benchmark result (84/84, 53/53 adversarial) is measured on the
-deterministic fake runner, not on a model.
+- **Accounts:** register and sign in (PBKDF2-hashed passwords, expiring server-side sessions).
+- **Private workspaces:** every deal, draft, receipt, chat and key is scoped to its owner.
+  A new account starts empty; there is no demo data.
+- **Bring your own AI key:** each user adds their own Anthropic, OpenAI, Gemini, Groq,
+  OpenRouter or any OpenAI-compatible key in **API Keys**. Keys are encrypted at rest
+  (Fernet), shown only masked, and every request's token usage is recorded per
+  provider and model so users can see what they spend.
+- **Sends from your mailbox:** connect your own SMTP account (Gmail app password,
+  Outlook, Zoho...). Without SMTP, approved drafts are recorded for manual sending.
+- **Safety:** policy guards (discount ceiling, opt-out, currency, sensitive data,
+  grounding of amounts), hash-bound approvals with 409 on stale or tampered drafts,
+  and a per-user kill switch that pauses all drafting and sending.
 
-## Quickstart — the ten-line gate
+## Run it with Docker (PostgreSQL)
 
 ```bash
-git clone https://github.com/JayDhole16/Chief-of-Staff.git   # 1  clone
-cd Chief-of-Staff                                            # 2
-make setup                                                   # 3  pip install -e ".[dev]"
-make demo-check                                              # 4  expect: VERDICT: PASS — 10/10 steps
-make test                                                    # 5  expect: 200 passed, 4 skipped
-cd frontend && npm ci && npm test -- --run && cd ..          # 6  expect: 38 passed (8 files)
-cp .env.example .env                                         # 7  then set POSTGRES_PASSWORD in .env
-make up                                                      # 8  web :3000, API :8080, worker :8081
-python scripts/smoke_app.py                                  # 9  web, API proxy, readiness, worker
-make down                                                    # 10 stop the stack
+cp .env.example .env          # set POSTGRES_PASSWORD and APP_ENCRYPTION_KEY (see comments)
+docker compose up -d --build  # db (Postgres 16), API :8080, web :3000, worker :8081
+python scripts/smoke_app.py   # probes web, API proxy, readiness and worker
 ```
 
-If those ten lines behave as commented, the fake-path claim is proven: proposal
-render -> hash -> 409 on tamper -> approval -> execution -> receipt -> sweep -> kill
-switch, with no network dependency beyond `npm ci`.
+Open http://localhost:3000. Postgres data lives on the `postgres_data` volume; the
+database is also published on `127.0.0.1:5433` (5432 is often taken by a local install).
 
-## What each gate proves
+## Run it locally (hot reload)
 
-| Command | Passing output | Proves |
-|---|---|---|
-| `make demo-check` | `VERDICT: PASS — 10/10 steps verified` | The golden path end to end on fakes |
-| `make test` | `200 passed, 4 skipped` | The backend suite (4 skips are the Postgres tests, which need `DATABASE_URL`) |
-| `npm test -- --run` | `38 passed (8 files)` | The PWA contract, mocks and approval flows |
-| `npm run build` | bundle emitted, 0 TypeScript errors | The frontend contract matches the API |
+Requirements: Python 3.10+, Node 22, and Docker for the database.
 
-## Endpoints (development stack)
+```bash
+cp .env.example .env                                          # once
+docker compose up -d db                                       # Postgres on 127.0.0.1:5433
+python -m pip install -e ".[dev]"
+python -m uvicorn backend.main:app --port 8000 --reload      # or: make dev-api (reads .env)
 
-The frontend is at `http://localhost:3000`, the API at `http://localhost:8080`, and
-the placeholder worker health at `http://localhost:8081/health`; PostgreSQL stays
-private on the Compose network. `http://localhost:3000/api/healthz` checks the Vite
-`/api` proxy end to end. The operations and brief endpoints are
-`http://localhost:8080/api/v1/ops/status` and `http://localhost:8080/api/v1/brief`;
-the ops response explicitly marks fake or unavailable integrations and returns
-`degraded` (`data_mode: provisional`) until every local component is ready. After
-`make up`, `python scripts/smoke_app.py` checks the web page, API proxy, API
-readiness and worker health together.
+cd frontend && npm ci && npm run dev                          # or: make dev-web → http://localhost:5173
+```
+
+The API reads `DATABASE_URL` from `.env`. Use `127.0.0.1`, not `localhost`: on Windows,
+`localhost` tries IPv6 first and every connection stalls for seconds. Leave
+`DATABASE_URL` empty to fall back to SQLite at `data/app.db`.
+
+## Using the app
+
+No AI keys are configured on the server. Each user brings their own:
+
+1. Create an account. The **Overview** page shows a *Connect your AI provider* card:
+   pick Anthropic, OpenAI, Gemini, Groq, OpenRouter or any OpenAI-compatible endpoint,
+   paste your key, and press *Save & test key*. Usage is billed to your own provider
+   account, and **API Keys** shows the tokens each model has used.
+2. **Deals** → add deals with contact name, email, value and last-contact date.
+3. **Deals → Draft follow-up** (or *Draft for all quiet deals*) → review the draft in
+   **Approvals**, edit if needed, then *Approve & send*.
+4. **Chat** → ask about your pipeline; answers are grounded in your own data.
+5. *(Optional)* **API Keys → Email sending (SMTP)** so approvals send real email.
+
+Saved API keys and SMTP passwords are encrypted with `APP_ENCRYPTION_KEY` (or a key
+generated once at `APP_KEY_FILE`). The Docker API and a locally run API share one
+database, so keep the same key in `.env` for both. Losing the key makes saved keys
+unreadable.
+
+## Tests
+
+```bash
+python -m pytest -q                       # backend on SQLite; Postgres variants skip
+# Same suite on PostgreSQL too (uses a separate database; tables in it are dropped):
+docker compose exec db createdb -U chief_of_staff chief_of_staff_test
+DATABASE_URL=postgresql://chief_of_staff:<password>@127.0.0.1:5433/chief_of_staff_test python -m backend.db.migrate
+POSTGRES_TEST_DATABASE_URL=postgresql://chief_of_staff:<password>@127.0.0.1:5433/chief_of_staff_test python -m pytest -q
+cd frontend && npm test -- --run          # frontend
+cd frontend && npm run build              # type-check + production bundle
+```
+
+LLM and SMTP calls are faked in the tests, so no network or keys are needed.
+
+## API overview
+
+All routes except auth and health require the `X-Session-ID` header (or
+`Authorization: Bearer <session>`).
+
+| Area | Routes |
+|---|---|
+| Auth | `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/session` |
+| Profile | `GET/PUT /api/profile` |
+| Deals | `GET/POST /api/deals`, `GET/PUT/DELETE /api/deals/{id}`, `POST /api/deals/{id}/draft-followup`, `POST /api/sweep` |
+| Approvals | `GET /api/approvals?status=pending\|blocked\|all`, `PUT /api/approvals/{ref}`, `POST /api/approvals/{ref}/decision` |
+| Records | `GET /api/receipts`, `GET /api/receipts/{id}`, `GET /api/activity`, `GET /api/brief` |
+| Chat | `POST /api/chat`, `GET /api/chat/sessions`, `GET/PUT/DELETE /api/chat/sessions/{id}` |
+| API keys | `GET /api/settings/api-keys`, `PUT/DELETE /api/settings/api-keys/{provider}`, `POST /api/settings/api-keys/{provider}/test`, `PUT /api/settings/active-provider`, `GET /api/settings/usage` |
+| Email | `GET/PUT/DELETE /api/settings/email`, `POST /api/settings/email/test` |
+| Ops | `POST /api/settings/kill-switch`, `GET /api/v1/ops/status`, `GET /healthz`, `GET /readyz` |
+
+Interactive docs: http://localhost:8000/docs
 
 ## Known limits
 
-- This is a development stack, not the production architecture: application state
-  is mostly in memory, the worker only exposes placeholder health, and only
-  provisional inbound tasks are persisted (Postgres when `DATABASE_URL` is set).
-- Live prerequisites (database, Google, model, Evolus, vault) are uncredentialed;
-  `python scripts/live_golden_path_check.py` reports them as blocked on purpose.
-- Full-repo `ruff check backend tests` has pre-existing violations; CI lints a
-  curated file list with `--select I,F` instead.
-
-See [jay.md](jay.md) for provisional decisions and remaining gaps, [docs/](docs/)
-for ADRs and demo material, and [SUBMISSION_CHECKLIST.md](SUBMISSION_CHECKLIST.md)
-for the submission state.
+- Each API process holds one database connection; scale with more workers or a pool if needed.
+- Email sending is plain-text SMTP. There is no Gmail OAuth or inbound-mail ingestion yet.
+- The worker container exposes health only; drafting and sending happen in the API request.
+- The benchmark harness under `bench/` runs on the deterministic fake runner, not on a model.
