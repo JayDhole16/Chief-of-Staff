@@ -41,3 +41,6 @@ tmp/vite.log
 .agents/
 skills-lock.json
 
+
+# Local application database and encryption key
+/data/

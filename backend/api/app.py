@@ -1,525 +1,346 @@
 """
-FastAPI Application and Read/Approval/Operations/Chat Endpoints (T08.4, T09, T10.1, T15).
+Chief-of-Staff HTTP API.
 
-Connects:
-- Pure read APIs (/api/activity, /api/receipts, /api/deals, /api/escalations)
-- Founder authority endpoints (/api/approvals/pending, /api/approvals/{ref}/decision)
-- Action lifecycle & undo (/api/actions/{ref}/cancel)
-- Session auth & profile (/api/auth/login, /api/session, /api/profile)
-- Settings & Kill Switch (/api/settings, /api/settings/kill-switch)
-- Grounded AI Chief of Staff Chat (/api/chat)
-- Inbound pipeline injection & quiet sweep dev endpoints (/api/dev/...)
+Every route except auth and health requires a session (``X-Session-ID`` header or
+``Authorization: Bearer``) and only ever reads or writes the caller's own data.
+
+- Auth:        /api/auth/register, /api/auth/login, /api/auth/logout, /api/session
+- Profile:     /api/profile
+- Deals:       /api/deals (CRUD), /api/deals/{id}/draft-followup, /api/sweep
+- Approvals:   /api/approvals, /api/approvals/{ref} (edit), /api/approvals/{ref}/decision
+- Records:     /api/receipts, /api/activity, /api/brief
+- Chat:        /api/chat, /api/chat/sessions
+- Settings:    /api/settings/api-keys, /api/settings/email, /api/settings/usage,
+               /api/settings/kill-switch
+- Operations:  /healthz, /readyz, /api/v1/ops/status
 """
+
+from __future__ import annotations
 
 import hashlib
 import hmac
 import os
-from datetime import datetime, timedelta, timezone
+import re
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Literal
-from uuid import uuid4
 
-from fastapi import FastAPI, Header, HTTPException, Query, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import Field
+from pydantic import BaseModel, Field
 
-from backend.contracts import CompatBaseModel
-from backend.contracts.read_api import (
-    ActionReceiptResponse,
-    ActivityEventItem,
-    ActivityFeedResponse,
-    ActivityType,
-    DealItem,
-    DealStage,
-    EscalationItem,
-    EscalationSeverity,
-    EscalationsResponse,
-    PipelineDealsResponse,
-    ReceiptFactItem,
-    ReceiptStatus,
-    ReceiptTimelineItem,
-)
-from backend.contracts.settings import (
-    EvolusConfigUpdate,
-    EvolusSettingsView,
-    GoogleConnectionUpdate,
-    GoogleSettingsView,
-    IntegrationsSection,
-    IntegrationTestResult,
-    ModelConfigUpdate,
-    ModelSettingsView,
-)
 from backend.facts.inr_formatter import format_inr
 from backend.guards.definitions import list_guards
-from backend.integrations import Adapters, build_adapters
-from backend.services.brief import (
-    FounderBriefResponse,
-    FounderBriefService,
+from backend.policy.engine import PolicyInput, evaluate_policy
+from backend.services import llm, mailer
+from backend.services.app_store import (
+    AppStore,
+    EmailAlreadyRegisteredError,
+    iso,
+    parse_iso,
+    utcnow,
 )
-from backend.services.executor import (
-    FakeCalendarAdapter,
-    FakeGmailAdapter,
-    WorkerExecutor,
-)
-from backend.services.inbound import (
-    InboundEmailMessage,
-    InboundProcessingPipeline,
-)
-from backend.services.settings_store import (
-    SettingsStore,
-    get_evolus_view,
-    get_google_view,
-    get_integrations_section,
-    get_model_view,
-)
-from backend.services.sweep import (
-    QuietSweepService,
-    get_demo_sweep_deals,
-)
-from backend.services.tasks import (
-    PostgresTaskRepository,
-    SQLiteTaskRepository,
-    TaskRepositoryUnavailableError,
-    TaskService,
-)
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+DealStage = Literal["lead", "qualified", "proposal_sent", "negotiating", "won", "lost"]
+OPEN_STAGES = {"lead", "qualified", "proposal_sent", "negotiating"}
+
 
 # ---------------------------------------------------------------------------
-# Request/Response Schemas for Authority, Profile, Chat & Ops
+# Request / response schemas
 # ---------------------------------------------------------------------------
-
-class LoginRequest(CompatBaseModel):
-    email: str
-    password: str
-
-
-class LoginUser(CompatBaseModel):
-    id: str
-    email: str
-    name: str
-    role: str = "Founder & CEO"
-    business_name: str = "Nair Automation Studio"
-    timezone: str = "Asia/Kolkata"
+class RegisterRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    email: str = Field(max_length=254)
+    password: str = Field(min_length=8, max_length=256)
+    business_name: str = Field(default="", max_length=160)
 
 
-class LoginResponse(CompatBaseModel):
-    session_id: str
-    user: LoginUser
+class LoginRequest(BaseModel):
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=256)
 
 
-class SessionResponse(CompatBaseModel):
-    session_id: str
-    user: LoginUser
+class ProfileUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    role: str | None = Field(default=None, max_length=120)
+    business_name: str | None = Field(default=None, max_length=160)
+    timezone: str | None = Field(default=None, max_length=64)
+    signature: str | None = Field(default=None, max_length=500)
+    working_hours: str | None = Field(default=None, max_length=120)
+    max_discount_pct: int | None = Field(default=None, ge=0, le=100)
+    quiet_days_threshold: int | None = Field(default=None, ge=1, le=90)
 
 
-class ProfileUpdateRequest(CompatBaseModel):
-    name: str | None = None
-    role: str | None = None
-    business_name: str | None = None
-    timezone: str | None = None
-    signature: str | None = None
-    working_hours: str | None = None
-    concise_mode: bool | None = None
+class DealCreate(BaseModel):
+    company: str = Field(min_length=1, max_length=160)
+    title: str = Field(min_length=1, max_length=200)
+    contact_name: str = Field(min_length=1, max_length=120)
+    contact_email: str = Field(default="", max_length=254)
+    stage: DealStage = "lead"
+    value_inr: int = Field(default=0, ge=0)
+    notes: str = Field(default="", max_length=4000)
+    do_not_contact: bool = False
+    last_contact_at: str | None = None
 
 
-class FounderProfileResponse(CompatBaseModel):
-    id: str
-    name: str
-    email: str
-    role: str
-    business_name: str
-    timezone: str
-    signature: str
-    working_hours: str
-    concise_mode: bool
-    google_connected: bool
-    kill_switch_active: bool
+class DealUpdate(BaseModel):
+    company: str | None = Field(default=None, min_length=1, max_length=160)
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    contact_name: str | None = Field(default=None, min_length=1, max_length=120)
+    contact_email: str | None = Field(default=None, max_length=254)
+    stage: DealStage | None = None
+    value_inr: int | None = Field(default=None, ge=0)
+    notes: str | None = Field(default=None, max_length=4000)
+    do_not_contact: bool | None = None
+    last_contact_at: str | None = None
 
 
-class FactEvidence(CompatBaseModel):
-    key: str
-    label: str
-    value: str
-    source: str
+class DraftRequest(BaseModel):
+    instructions: str = Field(default="", max_length=2000)
 
 
-class RiskFlagSchema(CompatBaseModel):
-    code: str
-    severity: Literal["warning", "critical"]
-    reason: str
-    customer_claim: str | None = None
+class ProposalEdit(BaseModel):
+    subject: str = Field(min_length=1, max_length=300)
+    body: str = Field(min_length=1, max_length=20000)
 
 
-class ProposedActionSchema(CompatBaseModel):
-    ref: str
-    kind: Literal["email", "calendar"]
-    deal_id: str
-    deal_title: str
-    contact_name: str
-    contact_email: str
-    subject: str
-    rendered_body: str
-    rendered_hash: str
-    facts_used: list[FactEvidence] = Field(default_factory=list)
-    risk_flags: list[RiskFlagSchema] = Field(default_factory=list)
-    policy_verdict: Literal["ALLOW", "ASK", "BLOCK"]
-    policy_reasons: list[str] = Field(default_factory=list)
-    created_at: str
-    expires_at: str
-    status: Literal["pending", "approved", "rejected", "expired", "scheduled", "executing", "cancelled"]
-    execute_after: str | None = None
-
-
-class ApprovalItem(CompatBaseModel):
-    id: str
-    title: str
-    description: str
-    state: Literal["pending", "approved", "rejected"]
-    created_at: str
-    expires_at: str
-    proposal: ProposedActionSchema
-
-
-class ApprovalsResponse(CompatBaseModel):
-    approvals: list[ApprovalItem]
-    count: int
-
-
-class ApprovalDecisionRequest(CompatBaseModel):
+class DecisionRequest(BaseModel):
     decision: Literal["approve", "reject"]
     rendered_hash: str
-    rejection_reason: str | None = None
+    rejection_reason: str | None = Field(default=None, max_length=500)
 
 
-class ApprovalDecisionResponse(CompatBaseModel):
-    ref: str
-    status: Literal["approved", "rejected", "scheduled"]
-    rendered_hash: str
-    execute_after: str | None = None
-    message: str
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=8000)
+    session_id: str | None = None
 
 
-class CancelActionResponse(CompatBaseModel):
-    ref: str
-    status: str
-    cancelled_at: str
-    receipt_id: str
-    message: str
+class RenameChatRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=80)
 
 
-class SystemSettingsSchema(CompatBaseModel):
-    founder: dict[str, Any]
-    google_account: dict[str, Any]
-    kill_switch: dict[str, Any]
-    integrations: IntegrationsSection
+class ApiKeyUpdate(BaseModel):
+    api_key: str | None = Field(default=None, max_length=500)
+    model: str | None = Field(default=None, max_length=200)
+    base_url: str | None = Field(default=None, max_length=500)
+    make_active: bool = True
 
 
-class KillSwitchRequest(CompatBaseModel):
+class ActiveProviderRequest(BaseModel):
+    provider: str | None
+
+
+class EmailSettingsUpdate(BaseModel):
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(ge=1, le=65535)
+    username: str = Field(min_length=1, max_length=255)
+    password: str | None = Field(default=None, max_length=500)
+    from_email: str = Field(max_length=254)
+    use_ssl: bool = False
+
+
+class KillSwitchRequest(BaseModel):
     active: bool
-    reason: str | None = None
-
-
-class InjectInboundRequest(CompatBaseModel):
-    message_id: str
-    from_email: str
-    to_email: str = "meera@agency.in"
-    subject: str
-    body: str
-    from_name: str | None = None
-    headers: dict[str, str] = Field(default_factory=dict)
-
-
-class OperationsComponent(CompatBaseModel):
-    status: Literal["ready", "degraded", "unavailable", "not_configured"]
-    detail: str
-
-
-class OperationsStatusResponse(CompatBaseModel):
-    status: Literal["ready", "degraded"]
-    checked_at: datetime
-    data_mode: Literal["provisional"]
-    kill_switch_active: bool
-    components: dict[str, OperationsComponent]
-
-
-class BriefLink(CompatBaseModel):
-    kind: Literal["receipt", "approval", "escalation"]
-    reference: str
-    href: str
-
-
-class BriefItem(CompatBaseModel):
-    event_id: str
-    timestamp: datetime
-    title: str
-    summary: str
-    link: BriefLink
-
-
-class BriefResponse(CompatBaseModel):
-    generated_at: datetime
-    items: list[BriefItem]
-    omitted_unlinked_events: int
-    limitation: str
-
-
-class ChatMessageRequest(CompatBaseModel):
-    message: str
-    session_id: str = "s-1"
-
-
-class ChatMessageResponse(CompatBaseModel):
-    id: str
-    session_id: str
-    role: Literal["assistant"] = "assistant"
-    reply: str
-    timestamp: str
-    intent: str
-    facts_cited: list[dict[str, str]] = Field(default_factory=list)
-    guards_checked: list[str] = Field(default_factory=list)
-    suggested_prompts: list[str] = Field(default_factory=list)
-    action_card: dict[str, Any] | None = None
+    reason: str | None = Field(default=None, max_length=500)
 
 
 # ---------------------------------------------------------------------------
-# State Container (In-Memory Database & Services)
+# Helpers
 # ---------------------------------------------------------------------------
+def default_database() -> str:
+    """``DATABASE_URL`` (PostgreSQL) when set, otherwise a SQLite file at ``APP_DB_PATH``."""
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if database_url:
+        return database_url
+    env_path = os.getenv("APP_DB_PATH", "").strip()
+    if env_path:
+        return env_path
+    return str(Path(__file__).resolve().parents[2] / "data" / "app.db")
 
-class ApplicationState:
-    """Singleton-like in-memory application store for stateful demo & tests."""
 
-    def __init__(self):
-        self.reset()
+def sha256_hex(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
-    def reset(self):
-        if hasattr(self, "task_repository"):
-            try:
-                self.task_repository.close()
-            except Exception:
-                pass
-        self.sessions: dict[str, dict[str, Any]] = {
-            "test_session_123": {
-                "id": "user_meera_01",
-                "user_id": "user_meera_01",
-                "email": "meera@agency.in",
-                "name": "Meera Nair",
-                "role": "Founder & CEO",
-                "business_name": "Nair Growth Agency",
-                "timezone": "Asia/Kolkata",
-            }
-        }
-        self.founder_profile: dict[str, Any] = {
-            "id": "user_meera_01",
-            "name": "Meera Nair",
-            "email": "meera@agency.in",
-            "role": "Founder & CEO",
-            "business_name": "Nair Growth Agency",
-            "timezone": "Asia/Kolkata",
-            "signature": "Meera Nair · Chief of Staff",
-            "working_hours": "09:30 - 18:30 IST (Mon–Fri)",
-            "concise_mode": True,
-        }
-        self.kill_switch_active: bool = False
-        self.kill_switch_reason: str | None = None
-        self.google_connected: bool = True
-        self.google_email: str = "meera@agency.in"
-        self.google_token_status: str = "valid"
-        self.google_last_tested_at: datetime | None = None
-        self.google_last_test_result: Literal["ok", "failed"] | None = None
-        self.google_last_test_message: str | None = None
-        self.adapters: Adapters = build_adapters()
 
-        # Initialize pipelines & services
-        self.gmail_adapter = FakeGmailAdapter()
-        self.calendar_adapter = FakeCalendarAdapter()
-        self.receipts: dict[str, ActionReceiptResponse] = {}
-        self.activity_events: list[ActivityEventItem] = []
-        self.proposals: dict[str, ProposedActionSchema] = {}
-        self.escalations: list[EscalationItem] = []
+def _sanitize_deal_payload(data: dict[str, Any]) -> dict[str, Any]:
+    if "contact_email" in data and data["contact_email"]:
+        email = data["contact_email"].strip().lower()
+        if not EMAIL_RE.match(email):
+            raise HTTPException(status_code=422, detail="Contact email is not a valid address")
+        data["contact_email"] = email
+    if data.get("last_contact_at"):
+        try:
+            data["last_contact_at"] = iso(parse_iso(data["last_contact_at"]))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="last_contact_at must be an ISO date") from exc
+    for key in ("company", "title", "contact_name", "notes"):
+        if isinstance(data.get(key), str):
+            data[key] = data[key].strip()
+    return data
 
-        self.executor = WorkerExecutor(
-            gmail_adapter=self.gmail_adapter,
-            calendar_adapter=self.calendar_adapter,
-            receipt_store=self.receipts,
-            activity_store=[],
+
+_MONEY_RE = re.compile(r"(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)", re.IGNORECASE)
+_DISCOUNT_RE = re.compile(r"(\d{1,3})\s*%\s*(?:off|discount)", re.IGNORECASE)
+_FOREIGN_CURRENCY_RE = re.compile(r"(\$|€|£|\busd\b|\beur\b|\bgbp\b)", re.IGNORECASE)
+_SENSITIVE_RE = re.compile(
+    r"\b(?:\d[ -]?){13,16}\b"  # card-like numbers
+    r"|\b\d{4}\s?\d{4}\s?\d{4}\b"  # Aadhaar-like
+    r"|\b[A-Z]{5}\d{4}[A-Z]\b"  # PAN
+    r"|password\s*[:=]",
+    re.IGNORECASE,
+)
+
+
+def run_guards(*, user: dict[str, Any], deal: dict[str, Any], subject: str, body: str) -> dict[str, Any]:
+    """Run the deterministic G01–G15 policy over a drafted email."""
+    text = f"{subject}\n{body}"
+    amounts = []
+    for raw in _MONEY_RE.findall(text):
+        try:
+            amounts.append(int(float(raw.replace(",", ""))))
+        except ValueError:
+            continue
+    known_amounts = {int(deal.get("value_inr") or 0)}
+    draft_grounded = all(a in known_amounts for a in amounts)
+    discounts = [int(d) for d in _DISCOUNT_RE.findall(text)]
+    discount_pct = min(max(discounts, default=0), 100)
+    decision = evaluate_policy(
+        PolicyInput(
+            session_valid=True,
+            permission_granted=True,
+            amount_paise=0,
+            daily_limit_paise=0,
+            contact_verified=bool(EMAIL_RE.match(deal.get("contact_email") or "")),
+            task_scope_matches=True,
+            required_facts_present=bool(deal.get("contact_name") and deal.get("contact_email")),
+            draft_grounded=draft_grounded,
+            unverified_commitment=False,
+            currency="USD" if _FOREIGN_CURRENCY_RE.search(text) else "INR",
+            discount_pct=discount_pct,
+            mandate_max_discount_pct=int(user.get("max_discount_pct") or 0),
+            price_paise=0,
+            floor_price_paise=0,
+            opted_out=bool(deal.get("do_not_contact")),
+            within_business_window=True,
+            contains_sensitive_data=bool(_SENSITIVE_RE.search(text)),
+            grammar_ok=len(body.strip()) >= 20,
         )
-
-        database_url = os.getenv("DATABASE_URL")
-        self.task_repository = (
-            PostgresTaskRepository(database_url)
-            if database_url
-            else SQLiteTaskRepository()
-        )
-        self.task_service = TaskService(self.task_repository)
-        self.inbound_pipeline = InboundProcessingPipeline(
-            task_service_hook=self._create_inbound_task
-        )
-        self.sweep_service = QuietSweepService()
-
-        # Seed initial Beat 3 proposal (Raju Patel golden path pending approval)
-        self._seed_initial_state()
-
-    def _seed_initial_state(self):
-        now = datetime.now(timezone.utc)
-        body_text = (
-            "Dear Raju,\n\n"
-            "Thank you for your response regarding our proposal.\n\n"
-            "Regarding your query on pricing: we are pleased to confirm a 5% discount on the one-time implementation fee, "
-            "bringing the setup cost to ₹4,56,000 (standard ₹4,80,000). For annual ongoing maintenance, our SUP-ANNUAL tier is "
-            "₹60,000/year, and our standard cloud connector remains ₹15,000/month.\n\n"
-            "I would be delighted to walk you through the architecture this Thursday at 15:00 - 15:30 IST.\n\n"
-            "Best regards,\n"
-            "Meera Nair\n"
-            "Chief of Staff"
-        )
-        golden_hash = hashlib.sha256(body_text.encode("utf-8")).hexdigest()
-
-        p = ProposedActionSchema(
-            ref="PA-2026-10-15-001",
-            kind="email",
-            deal_id="D-1",
-            deal_title="Acme Warehouse Automation",
-            contact_name="Raju Patel",
-            contact_email="raju@patel-warehousing.in",
-            subject="Re: Automation Project Proposal & Scope",
-            rendered_body=body_text,
-            rendered_hash=golden_hash,
-            facts_used=[
-                FactEvidence(key="setup_cost", label="Setup (5% discount applied)", value="₹4,56,000", source="mandate_c2:rate_card"),
-                FactEvidence(key="discount_pct", label="Discount", value="5%", source="mandate_c2:max_discount"),
-                FactEvidence(key="support_annual", label="Annual Support", value="₹60,000", source="catalog:SUP-ANNUAL"),
-                FactEvidence(key="monthly_maintenance", label="Monthly Maintenance", value="₹15,000", source="catalog:CONN-MONTHLY"),
-                FactEvidence(key="meeting_slot", label="Proposed Slot", value="15:00 - 15:30 IST", source="calendar:slot_token"),
-            ],
-            risk_flags=[
-                RiskFlagSchema(
-                    code="G08",
-                    severity="warning",
-                    reason="Customer referenced verbal 20% discount on call. Exceeds mandate limit (5%). Requires founder review.",
-                    customer_claim="promised 20% on a call",
-                ),
-            ],
-            policy_verdict="ASK",
-            policy_reasons=[
-                'Customer claim "promised 20% on a call" is unverified',
-                "Founder review required before sending counter-offer",
-            ],
-            created_at=(now - timedelta(minutes=10)).isoformat(),
-            expires_at=(now + timedelta(hours=48)).isoformat(),
-            status="pending",
-        )
-        self.proposals[p.ref] = p
-
-        # Seed initial activity feed events
-        self.activity_events.append(
-            ActivityEventItem(
-                id="evt_001",
-                timestamp=now - timedelta(minutes=10),
-                type=ActivityType.PROPOSED,
-                title="Proposed follow-up to Raju Patel",
-                description="Counter-offer ₹4,56,000 drafted. Pending founder approval.",
-                user_id="agent_cos",
-                action_ref="PA-2026-10-15-001",
-                rendered_hash=golden_hash,
-                can_undo=False,
-            )
-        )
-        self.activity_events.append(
-            ActivityEventItem(
-                id="evt_002",
-                timestamp=now - timedelta(minutes=45),
-                type=ActivityType.EXECUTION,
-                title="D-1 Follow-up Sent",
-                description="Autonomously sent to Acme Warehousing.",
-                user_id="worker_executor",
-                receipt_id="rcpt_20261015_001",
-                can_undo=False,
-            )
-        )
-
-        # Seed a pre-existing receipt
-        rcpt = ActionReceiptResponse(
-            receipt_id="rcpt_20261015_001",
-            action_ref="act_d1_01",
-            action_kind="email",
-            status=ReceiptStatus.EXECUTED,
-            authority_clause="Mandate M-2026-10-15 Clause C2: Follow-up quiet deals with <=5% discount",
-            recipient_email="raju@patel-warehousing.in",
-            external_id="gmail_msg_18b93f8e71c29a04",
-            rendered_hash=golden_hash,
-            checks_passed=["G01", "G04", "G05", "G06", "G07", "G09", "G10", "G11"],
-            facts_used=[
-                ReceiptFactItem(key="deal_value", label="Deal Value", value="₹12,50,000", source="crm:deal_d1"),
-                ReceiptFactItem(key="max_discount", label="Max Discount", value="5%", source="mandate:clause_c2"),
-            ],
-            executed_at=now - timedelta(minutes=45),
-            undo_window_seconds=15,
-            timeline=[
-                ReceiptTimelineItem(timestamp=now - timedelta(minutes=45, seconds=15), event="Sweep proposed action under mandate"),
-                ReceiptTimelineItem(timestamp=now - timedelta(minutes=45), event="Undo window elapsed; worker dispatched"),
-                ReceiptTimelineItem(timestamp=now - timedelta(minutes=44, seconds=58), event="Gmail API send confirmed"),
-            ],
-        )
-        self.receipts["rcpt_20261015_001"] = rcpt
-        self.receipts["act_d1_01"] = rcpt
-
-    def _create_inbound_task(
-        self,
-        *,
-        contact_id: str | None,
-        deal_id: str | None,
-        deal_version: int,
-        message_id: str,
-        classification: Any,
-        risk_flags: list[Any],
-        verdict: str,
-    ) -> str:
-        if contact_id is None or deal_id is None:
-            raise ValueError("A verified contact and deal are required to create a task")
-        task = self.task_service.create_task(
-            workspace_id="demo",
-            contact_id=contact_id,
-            deal_id=deal_id,
-            deal_version=deal_version,
-            source_message_id=message_id,
-            kind=classification.intent.lower(),
-            payload={
-                "verdict": verdict,
-                "risk_flags": [flag.code for flag in risk_flags],
-            },
-        )
-        return task.task_id
-
-
-# Global in-memory instance
-state = ApplicationState()
-
-
-def _parse_iso_utc(iso_str: str) -> datetime:
-    dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-
-
-# ---------------------------------------------------------------------------
-# FastAPI App Construction
-# ---------------------------------------------------------------------------
-
-def create_app() -> FastAPI:
-    app = FastAPI(
-        title="AI Chief of Staff - Backend API",
-        version="0.1.0",
-        description="Founder OS API for sales operations, approvals, receipts, chat, and pipeline.",
     )
+    reasons = list(decision.reasons)
+    if amounts and not draft_grounded:
+        reasons.append(
+            "Amounts in the draft do not match the deal value on record: "
+            + ", ".join(format_inr(a * 100) for a in amounts)
+        )
+    return {
+        "verdict": decision.verdict,
+        "reasons": reasons,
+        "guards_triggered": list(decision.guards_triggered),
+        "guards_checked": sorted(list_guards().keys()),
+    }
 
-    # Enable CORS for Vite frontend (http://localhost:5173)
+
+def parse_draft(text: str, fallback_subject: str) -> tuple[str, str]:
+    """Split an LLM draft of the form ``SUBJECT: ...`` + body."""
+    cleaned = text.strip().strip("`").strip()
+    subject = fallback_subject
+    lines = cleaned.splitlines()
+    if lines and lines[0].lower().startswith("subject:"):
+        subject = lines[0].split(":", 1)[1].strip() or fallback_subject
+        lines = lines[1:]
+    body = "\n".join(lines).strip()
+    if body.lower().startswith("body:"):
+        body = body[5:].strip()
+    return subject[:300], body
+
+
+# ---------------------------------------------------------------------------
+# App factory
+# ---------------------------------------------------------------------------
+def create_app(database: str | None = None) -> FastAPI:
+    store = AppStore(database or default_database())
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        yield
+        store.close()
+
+    app = FastAPI(
+        lifespan=lifespan,
+        title="Chief of Staff API",
+        version="1.0.0",
+        description="Founder operating system: deals, approvals, receipts, grounded chat, BYOK LLM keys.",
+    )
+    app.state.store = store
+
+    origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=origins or ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
+    # ---------------------------------------------------------------- auth deps
+    def session_token(
+        x_session_id: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+    ) -> str:
+        token = x_session_id
+        if not token and authorization and authorization.lower().startswith("bearer "):
+            token = authorization[7:].strip()
+        if not token:
+            raise HTTPException(status_code=401, detail="Not signed in")
+        return token
+
+    def current_user(token: str = Depends(session_token)) -> dict[str, Any]:
+        user = store.user_for_session(token)
+        if user is None:
+            raise HTTPException(status_code=401, detail="Session expired. Please sign in again.")
+        return user
+
+    def llm_config_for(user: dict[str, Any]) -> llm.LLMConfig:
+        provider = user.get("active_llm_provider")
+        if not provider:
+            raise HTTPException(
+                status_code=409,
+                detail="No AI provider configured. Add your API key in Settings → API Keys.",
+            )
+        try:
+            return llm.resolve_config(provider, store.get_api_key(user["id"], provider))
+        except llm.LLMNotConfiguredError as exc:
+            raise HTTPException(status_code=409, detail=f"{exc}. Update it in Settings → API Keys.") from exc
+
+    def call_llm(
+        user: dict[str, Any],
+        *,
+        purpose: str,
+        system: str,
+        messages: list[dict[str, str]],
+        max_tokens: int = 4000,
+    ) -> llm.LLMResult:
+        config = llm_config_for(user)
+        try:
+            result = llm.complete(config, system=system, messages=messages, max_tokens=max_tokens)
+        except llm.LLMError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        store.record_usage(
+            user["id"],
+            provider=result.provider,
+            model=result.model,
+            purpose=purpose,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+        )
+        return result
+
+    def auth_response(user: dict[str, Any]) -> dict[str, Any]:
+        return {"session_id": store.create_session(user["id"]), "user": user}
+
+    # ---------------------------------------------------------------- health
     @app.get("/healthz")
     @app.get("/api/healthz")
     def healthz() -> dict[str, str]:
@@ -527,987 +348,724 @@ def create_app() -> FastAPI:
 
     @app.get("/readyz")
     def readyz() -> dict[str, str]:
-        try:
-            healthy = state.task_repository.health_check()
-        except TaskRepositoryUnavailableError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Task repository is not ready",
-            ) from exc
-        if not healthy:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Task repository is not ready",
-            )
+        if not store.health_check():
+            raise HTTPException(status_code=503, detail="Database is not ready")
         return {"status": "ready"}
 
-    # -----------------------------------------------------------------------
-    # Helper: Verify Session
-    # -----------------------------------------------------------------------
-    def get_current_user(x_session_id: str | None = Header(None)) -> dict[str, Any]:
-        if not x_session_id or x_session_id not in state.sessions:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Unauthorized: Missing or invalid session ID.",
+    # ---------------------------------------------------------------- auth
+    @app.post("/api/auth/register", status_code=201)
+    def register(req: RegisterRequest) -> dict[str, Any]:
+        email = req.email.strip().lower()
+        if not EMAIL_RE.match(email):
+            raise HTTPException(status_code=422, detail="Enter a valid email address")
+        if not req.name.strip():
+            raise HTTPException(status_code=422, detail="Enter your name")
+        try:
+            user = store.create_user(
+                name=req.name, email=email, password=req.password, business_name=req.business_name
             )
-        return state.sessions[x_session_id]
+        except EmailAlreadyRegisteredError as exc:
+            raise HTTPException(status_code=409, detail="An account with this email already exists") from exc
+        store.add_activity(user["id"], type="account", title="Account created", description=f"Welcome, {user['name']}.")
+        return auth_response(user)
 
-    # -----------------------------------------------------------------------
-    # Auth, Session & Profile Endpoints
-    # -----------------------------------------------------------------------
-    @app.post("/api/auth/login", response_model=LoginResponse)
-    def login(req: LoginRequest):
-        email = (req.email or "").strip()
-        password = req.password or ""
-        if not email or not password or "@" not in email:
-            raise HTTPException(status_code=422, detail="Valid email and password required")
-        if len(password) < 6:
-            raise HTTPException(status_code=422, detail="Invalid credentials")
+    @app.post("/api/auth/login")
+    def login(req: LoginRequest) -> dict[str, Any]:
+        user = store.authenticate(req.email, req.password)
+        if user is None:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+        return auth_response(user)
 
-        session_id = f"session_{uuid4().hex[:12]}"
-        user_info = {
-            "id": f"user_{uuid4().hex[:6]}",
-            "email": email,
-            "name": email.split("@")[0].title(),
-            "role": state.founder_profile.get("role", "Founder & CEO"),
-            "business_name": state.founder_profile.get("business_name", "Nair Growth Agency"),
-            "timezone": state.founder_profile.get("timezone", "Asia/Kolkata"),
+    @app.post("/api/auth/logout")
+    def logout(token: str = Depends(session_token)) -> dict[str, str]:
+        store.delete_session(token)
+        return {"status": "signed_out"}
+
+    @app.get("/api/session")
+    def get_session(token: str = Depends(session_token), user: dict = Depends(current_user)) -> dict[str, Any]:
+        return {"session_id": token, "user": user}
+
+    # ---------------------------------------------------------------- profile
+    @app.get("/api/profile")
+    def get_profile(user: dict = Depends(current_user)) -> dict[str, Any]:
+        return user
+
+    @app.put("/api/profile")
+    def update_profile(req: ProfileUpdate, user: dict = Depends(current_user)) -> dict[str, Any]:
+        updates = {k: (v.strip() if isinstance(v, str) else v) for k, v in req.model_dump(exclude_none=True).items()}
+        return store.update_user(user["id"], updates)
+
+    # ---------------------------------------------------------------- deals
+    @app.get("/api/deals")
+    def list_deals(user: dict = Depends(current_user)) -> dict[str, Any]:
+        deals = store.list_deals(user["id"])
+        threshold = int(user["quiet_days_threshold"])
+        for d in deals:
+            d["is_quiet"] = d["stage"] in OPEN_STAGES and (d["days_quiet"] or 0) >= threshold
+        open_value = sum(d["value_inr"] for d in deals if d["stage"] in OPEN_STAGES)
+        return {
+            "deals": deals,
+            "count": len(deals),
+            "open_pipeline_inr": open_value,
+            "won_inr": sum(d["value_inr"] for d in deals if d["stage"] == "won"),
         }
-        state.sessions[session_id] = user_info
-        return LoginResponse(session_id=session_id, user=LoginUser(**user_info))
 
-    @app.get("/api/session", response_model=SessionResponse)
-    def get_session(x_session_id: str | None = Header(None)):
-        user = get_current_user(x_session_id)
-        user_payload = {
-            "id": user.get("id") or user.get("user_id", "user_01"),
-            "email": user["email"],
-            "name": user["name"],
-            "role": user.get("role", "Founder & CEO"),
-            "business_name": user.get("business_name", "Nair Growth Agency"),
-            "timezone": user.get("timezone", "Asia/Kolkata"),
+    @app.post("/api/deals", status_code=201)
+    def create_deal(req: DealCreate, user: dict = Depends(current_user)) -> dict[str, Any]:
+        deal = store.create_deal(user["id"], _sanitize_deal_payload(req.model_dump()))
+        store.add_activity(
+            user["id"],
+            type="deal",
+            title=f"Deal added: {deal['company']}",
+            description=f"{deal['title']} · {format_inr(deal['value_inr'] * 100)}",
+            deal_id=deal["id"],
+        )
+        return deal
+
+    @app.get("/api/deals/{deal_id}")
+    def get_deal(deal_id: str, user: dict = Depends(current_user)) -> dict[str, Any]:
+        deal = store.get_deal(user["id"], deal_id)
+        if deal is None:
+            raise HTTPException(status_code=404, detail="Deal not found")
+        return deal
+
+    @app.put("/api/deals/{deal_id}")
+    def update_deal(deal_id: str, req: DealUpdate, user: dict = Depends(current_user)) -> dict[str, Any]:
+        before = store.get_deal(user["id"], deal_id)
+        if before is None:
+            raise HTTPException(status_code=404, detail="Deal not found")
+        deal = store.update_deal(user["id"], deal_id, _sanitize_deal_payload(req.model_dump(exclude_none=True)))
+        assert deal is not None
+        if req.stage and req.stage != before["stage"]:
+            store.add_activity(
+                user["id"],
+                type="deal",
+                title=f"{deal['company']} moved to {req.stage.replace('_', ' ')}",
+                description=deal["title"],
+                deal_id=deal_id,
+            )
+        return deal
+
+    @app.delete("/api/deals/{deal_id}")
+    def delete_deal(deal_id: str, user: dict = Depends(current_user)) -> dict[str, str]:
+        deal = store.get_deal(user["id"], deal_id)
+        if deal is None or not store.delete_deal(user["id"], deal_id):
+            raise HTTPException(status_code=404, detail="Deal not found")
+        store.add_activity(user["id"], type="deal", title=f"Deal removed: {deal['company']}")
+        return {"status": "deleted"}
+
+    def draft_followup(user: dict[str, Any], deal: dict[str, Any], instructions: str = "") -> dict[str, Any]:
+        if user["kill_switch_active"]:
+            raise HTTPException(status_code=423, detail="Kill switch is active. Release it to draft outreach.")
+        if deal["do_not_contact"]:
+            raise HTTPException(status_code=409, detail=f"{deal['contact_name']} is marked do-not-contact (G12)")
+        if not deal["contact_email"]:
+            raise HTTPException(status_code=422, detail="Add a contact email to this deal before drafting")
+        sender = user["signature"] or user["name"]
+        system = (
+            "You draft short, warm, professional B2B follow-up emails for a founder. "
+            "Use ONLY the facts given. Never invent prices, discounts, dates, meetings, or promises. "
+            "If you mention money, use only the deal value given, written in INR (₹). "
+            f"Never offer a discount above {user['max_discount_pct']}%. "
+            "Output format exactly:\nSUBJECT: <subject line>\n\n<email body ending with the signature>"
+        )
+        facts = (
+            f"Founder: {user['name']} ({user['role']}) at {user['business_name'] or 'their company'}\n"
+            f"Signature: {sender}\n"
+            f"Recipient: {deal['contact_name']} <{deal['contact_email']}> at {deal['company']}\n"
+            f"Deal: {deal['title']}\nStage: {deal['stage'].replace('_', ' ')}\n"
+            f"Deal value: {format_inr(deal['value_inr'] * 100)}\n"
+            f"Days since last contact: {deal['days_quiet'] if deal['days_quiet'] is not None else 'unknown'}\n"
+            f"Founder notes: {deal['notes'] or 'none'}\n"
+            f"Extra instructions from founder: {instructions or 'none'}"
+        )
+        result = call_llm(
+            user,
+            purpose="draft_followup",
+            system=system,
+            messages=[{"role": "user", "content": f"Draft the follow-up email.\n\n{facts}"}],
+            max_tokens=4000,
+        )
+        subject, body = parse_draft(result.text, f"Following up: {deal['title']}")
+        if not body:
+            raise HTTPException(status_code=502, detail="The AI provider returned an empty draft")
+        guard = run_guards(user=user, deal=deal, subject=subject, body=body)
+        proposal = store.create_proposal(
+            user["id"],
+            {
+                "deal_id": deal["id"],
+                "deal_title": f"{deal['company']} · {deal['title']}",
+                "contact_name": deal["contact_name"],
+                "contact_email": deal["contact_email"],
+                "subject": subject,
+                "rendered_body": body,
+                "rendered_hash": sha256_hex(body),
+                "policy_verdict": guard["verdict"],
+                "policy_reasons": guard["reasons"],
+                "guards_checked": guard["guards_checked"],
+                "facts_used": [
+                    {"label": "Deal value", "value": format_inr(deal["value_inr"] * 100), "source": f"deal:{deal['id']}"},
+                    {"label": "Stage", "value": deal["stage"], "source": f"deal:{deal['id']}"},
+                    {"label": "Model", "value": f"{result.provider}/{result.model}", "source": "settings:api_keys"},
+                ],
+                "status": "blocked" if guard["verdict"] == "BLOCK" else "pending",
+            },
+        )
+        store.add_activity(
+            user["id"],
+            type="proposed" if guard["verdict"] != "BLOCK" else "blocked",
+            title=f"Follow-up drafted for {deal['contact_name']}",
+            description=f"{deal['company']} · policy verdict {guard['verdict']}",
+            action_ref=proposal["ref"],
+            deal_id=deal["id"],
+        )
+        return proposal
+
+    @app.post("/api/deals/{deal_id}/draft-followup", status_code=201)
+    def draft_for_deal(deal_id: str, req: DraftRequest, user: dict = Depends(current_user)) -> dict[str, Any]:
+        deal = store.get_deal(user["id"], deal_id)
+        if deal is None:
+            raise HTTPException(status_code=404, detail="Deal not found")
+        return draft_followup(user, deal, req.instructions)
+
+    @app.post("/api/sweep")
+    def run_sweep(user: dict = Depends(current_user)) -> dict[str, Any]:
+        if user["kill_switch_active"]:
+            raise HTTPException(status_code=423, detail="Kill switch is active. Release it to run a sweep.")
+        llm_config_for(user)  # fail fast before scanning
+        threshold = int(user["quiet_days_threshold"])
+        deals = store.list_deals(user["id"])
+        drafted, skipped = [], []
+        for deal in deals:
+            label = f"{deal['company']} ({deal['id']})"
+            if deal["stage"] not in OPEN_STAGES:
+                continue
+            if (deal["days_quiet"] or 0) < threshold:
+                continue
+            if deal["do_not_contact"]:
+                skipped.append({"deal": label, "reason": "do-not-contact"})
+                continue
+            if not deal["contact_email"]:
+                skipped.append({"deal": label, "reason": "no contact email"})
+                continue
+            if store.has_pending_proposal_for_deal(user["id"], deal["id"]):
+                skipped.append({"deal": label, "reason": "already has a pending draft"})
+                continue
+            try:
+                drafted.append(draft_followup(user, deal)["ref"])
+            except HTTPException as exc:
+                skipped.append({"deal": label, "reason": str(exc.detail)})
+        store.add_activity(
+            user["id"],
+            type="sweep",
+            title="Quiet-deal sweep completed",
+            description=f"{len(drafted)} draft(s) created, {len(skipped)} skipped (threshold {threshold} days)",
+        )
+        return {
+            "scanned": len(deals),
+            "threshold_days": threshold,
+            "drafted": drafted,
+            "skipped": skipped,
         }
-        return SessionResponse(session_id=x_session_id or "", user=LoginUser(**user_payload))
 
-    @app.get("/api/profile", response_model=FounderProfileResponse)
-    def get_profile():
-        return FounderProfileResponse(
-            **state.founder_profile,
-            google_connected=state.google_connected,
-            kill_switch_active=state.kill_switch_active,
+    # ---------------------------------------------------------------- approvals
+    @app.get("/api/approvals")
+    @app.get("/api/approvals/pending")
+    def list_approvals(
+        status_filter: str | None = Query(default="pending", alias="status"),
+        user: dict = Depends(current_user),
+    ) -> dict[str, Any]:
+        status_value = None if status_filter in (None, "", "all") else status_filter
+        proposals = store.list_proposals(user["id"], status_value)
+        now = utcnow()
+        for p in proposals:
+            if p["status"] == "pending" and parse_iso(p["expires_at"]) <= now:
+                store.update_proposal(user["id"], p["ref"], {"status": "expired"})
+                p["status"] = "expired"
+        if status_value:
+            proposals = [p for p in proposals if p["status"] == status_value]
+        return {"approvals": proposals, "count": len(proposals)}
+
+    @app.get("/api/approvals/{ref}")
+    def get_approval(ref: str, user: dict = Depends(current_user)) -> dict[str, Any]:
+        proposal = store.get_proposal(user["id"], ref)
+        if proposal is None:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        return proposal
+
+    @app.put("/api/approvals/{ref}")
+    def edit_approval(ref: str, req: ProposalEdit, user: dict = Depends(current_user)) -> dict[str, Any]:
+        proposal = store.get_proposal(user["id"], ref)
+        if proposal is None:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        if proposal["status"] not in ("pending", "blocked"):
+            raise HTTPException(status_code=409, detail="Only pending drafts can be edited")
+        deal = store.get_deal(user["id"], proposal["deal_id"]) if proposal["deal_id"] else None
+        deal = deal or {
+            "contact_name": proposal["contact_name"],
+            "contact_email": proposal["contact_email"],
+            "value_inr": 0,
+            "do_not_contact": False,
+        }
+        guard = run_guards(user=user, deal=deal, subject=req.subject, body=req.body)
+        store.update_proposal(
+            user["id"],
+            ref,
+            {
+                "subject": req.subject.strip(),
+                "rendered_body": req.body,
+                "rendered_hash": sha256_hex(req.body),
+                "status": "blocked" if guard["verdict"] == "BLOCK" else "pending",
+                "policy_verdict": guard["verdict"],
+                "policy_reasons": guard["reasons"],
+            },
         )
+        store.add_activity(user["id"], type="edited", title=f"Draft edited for {proposal['contact_name']}", action_ref=ref)
+        updated = store.get_proposal(user["id"], ref)
+        assert updated is not None
+        return updated
 
-    @app.put("/api/profile", response_model=FounderProfileResponse)
-    def update_profile(req: ProfileUpdateRequest):
-        updates = req.model_dump(exclude_none=True)
-        for k, v in updates.items():
-            if k in state.founder_profile:
-                state.founder_profile[k] = v
-        for sess in state.sessions.values():
-            if "name" in updates:
-                sess["name"] = updates["name"]
-            if "role" in updates:
-                sess["role"] = updates["role"]
-            if "business_name" in updates:
-                sess["business_name"] = updates["business_name"]
-            if "timezone" in updates:
-                sess["timezone"] = updates["timezone"]
-        return FounderProfileResponse(
-            **state.founder_profile,
-            google_connected=state.google_connected,
-            kill_switch_active=state.kill_switch_active,
-        )
-
-    # -----------------------------------------------------------------------
-    # Approvals Endpoints (T09.4)
-    # -----------------------------------------------------------------------
-    @app.get("/api/approvals/pending", response_model=ApprovalsResponse)
-    def get_pending_approvals():
-        pending_list = [
-            ApprovalItem(
-                id=p.ref,
-                title=f"Review follow-up for {p.contact_name}",
-                description=f"{p.deal_title} ({p.policy_verdict})",
-                state="pending" if p.status == "pending" else "approved",
-                created_at=p.created_at,
-                expires_at=p.expires_at,
-                proposal=p,
-            )
-            for p in state.proposals.values()
-            if p.status == "pending"
-        ]
-        return ApprovalsResponse(approvals=pending_list, count=len(pending_list))
-
-    @app.post("/api/approvals/{ref}/decision", response_model=ApprovalDecisionResponse)
-    def handle_approval_decision(ref: str, req: ApprovalDecisionRequest):
-        proposal = state.proposals.get(ref)
-        if not proposal:
-            raise HTTPException(status_code=404, detail=f"Proposal {ref} not found")
-
-        if proposal.status != "pending":
+    @app.post("/api/approvals/{ref}/decision")
+    def decide(ref: str, req: DecisionRequest, user: dict = Depends(current_user)) -> dict[str, Any]:
+        proposal = store.get_proposal(user["id"], ref)
+        if proposal is None:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        if proposal["status"] == "blocked" and req.decision == "approve":
+            raise HTTPException(status_code=409, detail="Blocked by policy guards; edit the draft first")
+        if proposal["status"] not in ("pending", "blocked"):
+            raise HTTPException(status_code=409, detail=f"Proposal is already {proposal['status']}")
+        if not hmac.compare_digest(proposal["rendered_hash"], sha256_hex(proposal["rendered_body"])):
+            raise HTTPException(status_code=409, detail="Stored draft no longer matches its hash")
+        if not hmac.compare_digest(proposal["rendered_hash"], req.rendered_hash):
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Proposal {ref} is no longer pending approval.",
+                status_code=409,
+                detail="This draft changed since you opened it. Refresh and review it again.",
             )
+        if parse_iso(proposal["expires_at"]) <= utcnow():
+            store.update_proposal(user["id"], ref, {"status": "expired"})
+            raise HTTPException(status_code=409, detail="This draft has expired")
 
-        actual_hash = hashlib.sha256(proposal.rendered_body.encode("utf-8")).hexdigest()
-        if not hmac.compare_digest(proposal.rendered_hash, actual_hash):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Stored proposal content no longer matches its rendered_hash.",
+        now_iso = iso(utcnow())
+        if req.decision == "reject":
+            store.update_proposal(user["id"], ref, {"status": "rejected", "decided_at": now_iso})
+            store.add_activity(
+                user["id"],
+                type="rejected",
+                title=f"Rejected draft to {proposal['contact_name']}",
+                description=req.rejection_reason or "Rejected by founder",
+                action_ref=ref,
+                deal_id=proposal["deal_id"],
             )
+            return {"ref": ref, "status": "rejected", "receipt": None, "message": "Draft rejected"}
 
-        # Non-negotiable safety invariant: rendered_hash binding
-        if not hmac.compare_digest(proposal.rendered_hash, req.rendered_hash):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Proposal version conflict: the supplied hash does not match the current proposal.",
-            )
+        if user["kill_switch_active"]:
+            raise HTTPException(status_code=423, detail="Kill switch is active. Release it to send.")
 
-        if _parse_iso_utc(proposal.expires_at) <= datetime.now(timezone.utc):
-            proposal.status = "expired"
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Proposal {ref} has expired and cannot be approved."
-                ),
-            )
-
-        if req.decision == "approve":
-            proposal.status = "approved"
-            if ref in state.sweep_service.proposal_store:
-                state.sweep_service.proposal_store[ref].status = "approved"
-            now = datetime.now(timezone.utc)
-
-            # Worker executes approved action and generates terminal receipt
-            receipt = state.executor.execute_action(
-                action_ref=proposal.ref,
-                action_kind=proposal.kind,
-                recipient_email=proposal.contact_email,
-                rendered_body_or_time=proposal.rendered_body,
-                rendered_hash=proposal.rendered_hash,
-                authority_clause="Founder Explicit Approval",
-                checks_passed=["G01", "G04", "G05", "G06", "G07", "G09", "G10", "G11"],
-                facts_used=[f.model_dump() for f in proposal.facts_used],
-                is_founder_approved=True,
-                email_subject=proposal.subject,
-            )
-            if receipt.status == ReceiptStatus.BLOCKED:
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=f"Approval was recorded but execution failed. Receipt: {receipt.receipt_id}",
+        timeline = [{"timestamp": now_iso, "event": "Founder approved hash-bound draft"}]
+        smtp = store.get_email_settings(user["id"], include_secret=True)
+        external_id = None
+        if smtp:
+            try:
+                external_id = mailer.send_email(
+                    smtp,
+                    to_email=proposal["contact_email"],
+                    subject=proposal["subject"],
+                    body=proposal["rendered_body"],
+                    from_name=user["name"],
                 )
+            except mailer.MailerError as exc:
+                receipt = store.create_receipt(
+                    user["id"],
+                    {
+                        "action_ref": ref,
+                        "status": "failed",
+                        "recipient_email": proposal["contact_email"],
+                        "subject": proposal["subject"],
+                        "rendered_hash": proposal["rendered_hash"],
+                        "detail": str(exc),
+                        "guards_checked": proposal["guards_checked"],
+                        "timeline": [*timeline, {"timestamp": iso(utcnow()), "event": f"Send failed: {exc}"}],
+                    },
+                )
+                store.add_activity(
+                    user["id"],
+                    type="failed",
+                    title=f"Email to {proposal['contact_name']} failed",
+                    description=str(exc),
+                    action_ref=ref,
+                    receipt_id=receipt["receipt_id"],
+                )
+                raise HTTPException(status_code=502, detail=f"Send failed: {exc}. The draft is still pending.") from exc
+            receipt_status = "sent"
+            detail = f"Delivered to SMTP server {smtp['host']}"
+            timeline.append({"timestamp": iso(utcnow()), "event": f"Sent via {smtp['host']} as {smtp['from_email']}"})
+        else:
+            receipt_status = "approved_manual"
+            detail = "No email account connected. Copy the draft and send it yourself, or connect SMTP in Settings."
+            timeline.append({"timestamp": iso(utcnow()), "event": "Approved; awaiting manual send (no SMTP configured)"})
 
-            # Record activity event
-            state.activity_events.insert(0, ActivityEventItem(
-                id=f"evt_{uuid4().hex[:8]}",
-                timestamp=now,
-                type=ActivityType.APPROVED,
-                title=f"Approved action for {proposal.contact_name}",
-                description=f"Founder confirmed {proposal.deal_title}. Terminal receipt: {receipt.receipt_id}.",
-                user_id="founder",
-                action_ref=proposal.ref,
-                receipt_id=receipt.receipt_id,
-                rendered_hash=proposal.rendered_hash,
-                can_undo=False,
-            ))
-
-            return ApprovalDecisionResponse(
-                ref=proposal.ref,
-                status="approved",
-                rendered_hash=proposal.rendered_hash,
-                message="Action approved and executed by worker",
-            )
-
-        elif req.decision == "reject":
-            proposal.status = "rejected"
-            if ref in state.sweep_service.proposal_store:
-                state.sweep_service.proposal_store[ref].status = "rejected"
-            now = datetime.now(timezone.utc)
-            state.activity_events.insert(0, ActivityEventItem(
-                id=f"evt_{uuid4().hex[:8]}",
-                timestamp=now,
-                type=ActivityType.REJECTED,
-                title=f"Rejected action for {proposal.contact_name}",
-                description=f"Reason: {req.rejection_reason or 'Rejected by founder'}",
-                user_id="founder",
-                action_ref=proposal.ref,
-                rendered_hash=proposal.rendered_hash,
-                can_undo=False,
-            ))
-            return ApprovalDecisionResponse(
-                ref=proposal.ref,
-                status="rejected",
-                rendered_hash=proposal.rendered_hash,
-                message="Action rejected",
-            )
-
-    # -----------------------------------------------------------------------
-    # Action Lifecycle & Undo
-    # -----------------------------------------------------------------------
-    @app.post("/api/actions/{ref}/cancel", response_model=CancelActionResponse)
-    def cancel_action(ref: str):
-        existing_receipt = state.receipts.get(ref)
-        if existing_receipt is not None and existing_receipt.status == ReceiptStatus.EXECUTED:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Action {ref} has already been executed by the worker. Undo window closed.",
-            )
-
-        now = datetime.now(timezone.utc)
-        receipt_id = f"rcpt_cancel_{uuid4().hex[:6]}"
-
-        cancelled_receipt = ActionReceiptResponse(
-            receipt_id=receipt_id,
+        receipt = store.create_receipt(
+            user["id"],
+            {
+                "action_ref": ref,
+                "status": receipt_status,
+                "recipient_email": proposal["contact_email"],
+                "subject": proposal["subject"],
+                "rendered_hash": proposal["rendered_hash"],
+                "external_id": external_id,
+                "detail": detail,
+                "guards_checked": proposal["guards_checked"],
+                "timeline": timeline,
+            },
+        )
+        store.update_proposal(
+            user["id"],
+            ref,
+            {"status": "sent" if receipt_status == "sent" else "approved", "decided_at": now_iso, "receipt_id": receipt["receipt_id"]},
+        )
+        if receipt_status == "sent" and proposal["deal_id"]:
+            store.update_deal(user["id"], proposal["deal_id"], {"last_contact_at": now_iso})
+        store.add_activity(
+            user["id"],
+            type="sent" if receipt_status == "sent" else "approved",
+            title=(
+                f"Email sent to {proposal['contact_name']}"
+                if receipt_status == "sent"
+                else f"Approved draft to {proposal['contact_name']}"
+            ),
+            description=detail,
             action_ref=ref,
-            action_kind="email",
-            status=ReceiptStatus.CANCELLED,
-            authority_clause="Founder Undo Action During Countdown Window",
-            rendered_hash="cancelled_hash",
-            cancelled_at=now,
-            timeline=[
-                ReceiptTimelineItem(timestamp=now, event="Action cancelled by user before dispatch"),
-            ],
+            receipt_id=receipt["receipt_id"],
+            deal_id=proposal["deal_id"],
         )
+        return {
+            "ref": ref,
+            "status": "sent" if receipt_status == "sent" else "approved",
+            "receipt": receipt,
+            "message": detail,
+        }
 
-        # Store under both receipt_id and action_ref so WorkerExecutor refuses late execution
-        state.receipts[receipt_id] = cancelled_receipt
-        state.receipts[ref] = cancelled_receipt
+    # ---------------------------------------------------------------- records
+    @app.get("/api/receipts")
+    def list_receipts(user: dict = Depends(current_user)) -> dict[str, Any]:
+        receipts = store.list_receipts(user["id"])
+        return {"receipts": receipts, "count": len(receipts)}
 
-        if ref in state.proposals:
-            state.proposals[ref].status = "cancelled"
-        if ref in state.sweep_service.proposal_store:
-            state.sweep_service.proposal_store[ref].status = "rejected"
-
-        state.activity_events.insert(0, ActivityEventItem(
-            id=f"evt_{uuid4().hex[:8]}",
-            timestamp=now,
-            type=ActivityType.CANCELLED,
-            title=f"Action Cancelled: {ref}",
-            description="User cancelled action during in-flight undo window.",
-            user_id="founder",
-            action_ref=ref,
-            receipt_id=receipt_id,
-        ))
-
-        return CancelActionResponse(
-            ref=ref,
-            status="cancelled",
-            cancelled_at=now.isoformat(),
-            receipt_id=receipt_id,
-            message="Action successfully cancelled",
-        )
-
-    # -----------------------------------------------------------------------
-    # Read APIs (T08.4)
-    # -----------------------------------------------------------------------
-    @app.get("/api/activity", response_model=ActivityFeedResponse)
-    def get_activity_feed(cursor: str | None = None, limit: int = Query(default=50, ge=1, le=500)):
-        if not isinstance(limit, int):
-            limit = 50
-        if not isinstance(cursor, str):
-            cursor = None
-        # Sync activities from inbound & sweep services if any new ones arrived
-        valid_types = {m.value for m in ActivityType}
-        existing_ids = {e.id for e in state.activity_events}
-
-        for act in state.inbound_pipeline.recorded_activities:
-            evt_id = act["id"]
-            if evt_id not in existing_ids:
-                state.activity_events.insert(0, ActivityEventItem(
-                    id=evt_id,
-                    timestamp=act["timestamp"],
-                    type=ActivityType(act["type"]) if act["type"] in valid_types else ActivityType.EXECUTION,
-                    title=act["title"],
-                    description=act["description"],
-                    user_id=act.get("user_id", "system"),
-                    action_ref=act.get("action_ref"),
-                    receipt_id=act.get("receipt_id"),
-                    escalation_id=act.get("escalation_id"),
-                ))
-                existing_ids.add(evt_id)
-
-        for act in state.sweep_service.activity_store:
-            evt_id = act["id"]
-            if evt_id not in existing_ids:
-                state.activity_events.insert(0, ActivityEventItem(
-                    id=evt_id,
-                    timestamp=act["timestamp"],
-                    type=ActivityType(act["type"]) if act["type"] in valid_types else ActivityType.SCHEDULED,
-                    title=act["title"],
-                    description=act["description"],
-                    user_id=act.get("user_id", "sweep_engine"),
-                    action_ref=act.get("action_ref"),
-                    rendered_hash=act.get("rendered_hash"),
-                    execute_after=act.get("execute_after"),
-                    can_undo=act.get("can_undo", False),
-                ))
-                existing_ids.add(evt_id)
-
-        for act in state.executor.activities:
-            evt_id = act["id"]
-            if evt_id not in existing_ids:
-                state.activity_events.insert(0, ActivityEventItem(
-                    id=evt_id,
-                    timestamp=act["timestamp"],
-                    type=ActivityType(act["type"]) if act["type"] in valid_types else ActivityType.EXECUTION,
-                    title=act["title"],
-                    description=act["description"],
-                    user_id=act.get("user_id", "worker_executor"),
-                    action_ref=act.get("action_ref"),
-                    receipt_id=act.get("receipt_id"),
-                    rendered_hash=act.get("rendered_hash"),
-                    can_undo=act.get("can_undo", False),
-                ))
-                existing_ids.add(evt_id)
-
-        start_idx = 0
-        if cursor:
-            for idx, evt in enumerate(state.activity_events):
-                if evt.id == cursor:
-                    start_idx = idx + 1
-                    break
-
-        sliced = state.activity_events[start_idx : start_idx + limit]
-        has_more = (start_idx + limit) < len(state.activity_events)
-        next_cursor = sliced[-1].id if (has_more and sliced) else None
-
-        return ActivityFeedResponse(
-            events=sliced,
-            count=len(state.activity_events),
-            has_more=has_more,
-            next_cursor=next_cursor,
-        )
-
-    @app.get("/api/receipts/{ref_or_id}", response_model=ActionReceiptResponse)
-    def get_receipt(ref_or_id: str):
-        receipt = state.receipts.get(ref_or_id)
-        if not receipt:
-            raise HTTPException(status_code=404, detail=f"Receipt {ref_or_id} not found")
+    @app.get("/api/receipts/{ref_or_id}")
+    def get_receipt(ref_or_id: str, user: dict = Depends(current_user)) -> dict[str, Any]:
+        receipt = store.get_receipt(user["id"], ref_or_id)
+        if receipt is None:
+            raise HTTPException(status_code=404, detail="Receipt not found")
         return receipt
 
-    @app.get("/api/deals", response_model=PipelineDealsResponse)
-    @app.get("/api/pipeline/deals", response_model=PipelineDealsResponse)
-    def get_deals():
-        deals_list = [
-            DealItem(
-                id="D-1",
-                title="Acme Warehousing Automation",
-                contact_name="Raju Patel",
-                contact_email="raju@patel-warehousing.in",
-                stage=DealStage.NEGOTIATION,
-                value_paise=125000000,
-                created_at=datetime(2026, 10, 1, 10, 0, tzinfo=timezone.utc),
-                days_quiet=3,
-                is_quiet=True,
-            ),
-            DealItem(
-                id="D-2",
-                title="Cloud Connector Architecture",
-                contact_name="Sunil Mehta",
-                contact_email="sunil@apexlogistics.in",
-                stage=DealStage.LEAD,
-                value_paise=250000000,
-                created_at=datetime(2026, 10, 5, 10, 0, tzinfo=timezone.utc),
-                days_quiet=1,
-                is_quiet=False,
-            ),
-            DealItem(
-                id="D-3",
-                title="Inventory Sync",
-                contact_name="Priya Shah",
-                contact_email="priya@quickship.in",
-                stage=DealStage.NEGOTIATION,
-                value_paise=180000000,
-                created_at=datetime(2026, 10, 2, 10, 0, tzinfo=timezone.utc),
-                days_quiet=6,
-                is_quiet=True,
-            ),
-            DealItem(
-                id="D-4",
-                title="Regional Hub Pilot",
-                contact_name="Arjun Verma",
-                contact_email="arjun@bluedart-franchise.in",
-                stage=DealStage.NEGOTIATION,
-                value_paise=300000000,
-                created_at=datetime(2026, 10, 8, 10, 0, tzinfo=timezone.utc),
-                days_quiet=5,
-                is_quiet=True,
-            ),
-            DealItem(
-                id="D-5",
-                title="ExpressCargo Route Automation",
-                contact_name="Deepak Roy",
-                contact_email="deepak@expresscargo.in",
-                stage=DealStage.ACTIVE,
-                value_paise=150000000,
-                created_at=datetime(2026, 10, 9, 10, 0, tzinfo=timezone.utc),
-                days_quiet=0,
-                is_quiet=False,
-            ),
-            DealItem(
-                id="D-6",
-                title="MegaFreight ERP Integration",
-                contact_name="Kavita Nair",
-                contact_email="kavita@megafreight.in",
-                stage=DealStage.WON,
-                value_paise=450000000,
-                created_at=datetime(2026, 9, 25, 10, 0, tzinfo=timezone.utc),
-                days_quiet=0,
-                is_quiet=False,
-            ),
-        ]
-        total_paise = sum(d.value_paise for d in deals_list)
-        return PipelineDealsResponse(deals=deals_list, count=len(deals_list), total_pipeline_paise=total_paise)
+    @app.get("/api/activity")
+    def get_activity(
+        limit: int = Query(default=100, ge=1, le=500), user: dict = Depends(current_user)
+    ) -> dict[str, Any]:
+        events = store.list_activity(user["id"], limit)
+        return {"events": events, "count": len(events)}
 
-    @app.get("/api/escalations", response_model=EscalationsResponse)
-    def get_escalations():
-        for esc in state.inbound_pipeline.created_escalations:
-            if not any(e.escalation_id == esc["escalation_id"] for e in state.escalations):
-                state.escalations.append(EscalationItem(
-                    escalation_id=esc["escalation_id"],
-                    created_at=esc["created_at"],
-                    severity=EscalationSeverity(esc["severity"]),
-                    source_message_id=esc["source_message_id"],
-                    deal_id=esc["deal_id"],
-                    contact_email=esc["contact_email"],
-                    reason=esc["reason"],
-                    guard_code=esc.get("guard_code"),
-                    status="open",
-                ))
-
-        return EscalationsResponse(escalations=state.escalations, count=len(state.escalations))
-
-    @app.get("/api/v1/ops/status", response_model=OperationsStatusResponse)
-    def get_operations_status():
-        try:
-            repository_ready = state.task_repository.health_check()
-        except TaskRepositoryUnavailableError as exc:
-            repository_ready = False
-            repository_detail = str(exc)
-        else:
-            repository_detail = (
-                f"{type(state.task_repository).__name__} health check passed"
-                if repository_ready
-                else f"{type(state.task_repository).__name__} health check failed"
-            )
-
-        components = {
-            "api": OperationsComponent(status="ready", detail="API process is serving requests"),
-            "task_repository": OperationsComponent(
-                status="ready" if repository_ready else "unavailable",
-                detail=repository_detail,
-            ),
-            "worker": OperationsComponent(
-                status="degraded",
-                detail="Health-only placeholder; no background jobs are executed",
-            ),
-            "google": OperationsComponent(
-                status="not_configured",
-                detail="Fake Gmail and Calendar adapters are active; no live Google connection",
-            ),
-            "agent_runtime": OperationsComponent(
-                status="not_configured",
-                detail="No live agent or DirectRunner is configured",
-            ),
-            "benchmarks": OperationsComponent(
-                status="not_configured",
-                detail="No benchmark run is recorded",
-            ),
-            "deployment": OperationsComponent(
-                status="not_configured",
-                detail="No approved demo deployment target is configured",
-            ),
+    def build_brief(user: dict[str, Any]) -> dict[str, Any]:
+        deals = list_deals(user)
+        pending = store.list_proposals(user["id"], "pending")
+        receipts = store.list_receipts(user["id"])
+        stage_counts: dict[str, int] = {}
+        for d in deals["deals"]:
+            stage_counts[d["stage"]] = stage_counts.get(d["stage"], 0) + 1
+        quiet = [d for d in deals["deals"] if d["is_quiet"]]
+        return {
+            "generated_at": iso(utcnow()),
+            "deal_count": deals["count"],
+            "open_pipeline_inr": deals["open_pipeline_inr"],
+            "won_inr": deals["won_inr"],
+            "stage_counts": stage_counts,
+            "quiet_deals": [
+                {"id": d["id"], "company": d["company"], "contact_name": d["contact_name"], "days_quiet": d["days_quiet"]}
+                for d in quiet
+            ],
+            "pending_approvals": len(pending),
+            "emails_sent": sum(1 for r in receipts if r["status"] == "sent"),
+            "recent_activity": store.list_activity(user["id"], 8),
+            "kill_switch_active": user["kill_switch_active"],
+            "ai_provider": user.get("active_llm_provider"),
         }
-        overall_status = (
-            "ready"
-            if repository_ready
-            and all(component.status == "ready" for component in components.values())
-            else "degraded"
-        )
-        return OperationsStatusResponse(
-            status=overall_status,
-            checked_at=datetime.now(timezone.utc),
-            data_mode="provisional",
-            kill_switch_active=state.kill_switch_active,
-            components=components,
-        )
 
-    @app.get("/api/v1/brief", response_model=BriefResponse)
-    def get_brief():
-        events = get_activity_feed().events
-        escalations = get_escalations().escalations
-        escalation_ids = {item.escalation_id for item in escalations}
-        brief_items: list[BriefItem] = []
-        omitted_unlinked = 0
+    @app.get("/api/brief")
+    def get_brief(user: dict = Depends(current_user)) -> dict[str, Any]:
+        return build_brief(user)
 
-        for event in events:
-            link: BriefLink | None = None
-            if event.receipt_id and event.receipt_id in state.receipts:
-                link = BriefLink(
-                    kind="receipt",
-                    reference=event.receipt_id,
-                    href=f"/api/receipts/{event.receipt_id}",
-                )
-            elif event.action_ref and event.action_ref in state.proposals:
-                link = BriefLink(
-                    kind="approval",
-                    reference=event.action_ref,
-                    href="/api/approvals/pending",
-                )
-            elif event.escalation_id and event.escalation_id in escalation_ids:
-                link = BriefLink(
-                    kind="escalation",
-                    reference=event.escalation_id,
-                    href="/api/escalations",
-                )
-
-            if link is None:
-                omitted_unlinked += 1
-                continue
-
-            brief_items.append(
-                BriefItem(
-                    event_id=event.id,
-                    timestamp=event.timestamp,
-                    title=event.title,
-                    summary=event.description,
-                    link=link,
-                )
-            )
-
-        return BriefResponse(
-            generated_at=datetime.now(timezone.utc),
-            items=brief_items,
-            omitted_unlinked_events=omitted_unlinked,
-            limitation=(
-                "Provisional local state; activity may be incomplete and is not a live "
-                "operational record."
-            ),
+    # ---------------------------------------------------------------- chat
+    def chat_system_prompt(user: dict[str, Any]) -> str:
+        brief = build_brief(user)
+        deals = store.list_deals(user["id"])
+        deal_lines = "\n".join(
+            f"- {d['id']}: {d['company']} — {d['title']} | contact {d['contact_name']} <{d['contact_email'] or 'no email'}>"
+            f" | stage {d['stage']} | value {format_inr(d['value_inr'] * 100)}"
+            f" | quiet {d['days_quiet'] if d['days_quiet'] is not None else '?'}d"
+            f"{' | DO NOT CONTACT' if d['do_not_contact'] else ''}"
+            f"{' | notes: ' + d['notes'][:200] if d['notes'] else ''}"
+            for d in deals[:100]
+        ) or "(no deals yet)"
+        pending = store.list_proposals(user["id"], "pending")
+        pending_lines = "\n".join(
+            f"- {p['ref']}: to {p['contact_name']} re '{p['subject']}' (verdict {p['policy_verdict']})" for p in pending[:20]
+        ) or "(none)"
+        return (
+            f"You are the AI chief of staff for {user['name']}, {user['role']} at "
+            f"{user['business_name'] or 'their company'}. Be concise, specific and practical. "
+            "Ground every claim about deals, money or status in the workspace data below; if the data "
+            "does not contain the answer, say so rather than guessing. Use INR (₹, Indian digit grouping) for money. "
+            "You cannot send emails yourself: to contact someone, tell the founder to use 'Draft follow-up' on the deal "
+            "in the Deals view, which creates a hash-bound draft that they approve in Approvals.\n\n"
+            f"Today (UTC): {utcnow().strftime('%Y-%m-%d')}\n"
+            f"Quiet-deal threshold: {user['quiet_days_threshold']} days; max autonomous discount: {user['max_discount_pct']}%\n"
+            f"Kill switch: {'ACTIVE' if user['kill_switch_active'] else 'off'}\n"
+            f"Open pipeline: {format_inr(brief['open_pipeline_inr'] * 100)}; won: {format_inr(brief['won_inr'] * 100)}; "
+            f"emails sent: {brief['emails_sent']}\n\n"
+            f"DEALS:\n{deal_lines}\n\nPENDING APPROVALS:\n{pending_lines}"
         )
 
-    @app.get("/api/brief", response_model=FounderBriefResponse)
-    def get_founder_brief(x_workspace_id: str = Header(default="WS-DEMO")):
-        get_escalations()
-        get_activity_feed()
-
-        if x_workspace_id != "WS-DEMO":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Unauthorized access to workspace 'WS-DEMO' from '{x_workspace_id}'",
-            )
-
-        deals_response = get_deals()
-        brief_service = FounderBriefService(workspace_id="WS-DEMO")
-        proposals_list = [p.model_dump() for p in state.proposals.values()]
-        receipts_list = list(state.receipts.values())
-
-        try:
-            brief = brief_service.generate_brief(
-                receipts=receipts_list,
-                proposals=proposals_list,
-                deals=deals_response.deals,
-                escalations=state.escalations,
-                activity_events=state.activity_events,
-                requesting_workspace_id=x_workspace_id,
-            )
-            return brief
-        except PermissionError as e:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
-
-    # -----------------------------------------------------------------------
-    # Grounded AI Chief of Staff Chat Endpoint
-    # -----------------------------------------------------------------------
-    @app.post("/api/chat", response_model=ChatMessageResponse)
-    def handle_chat(req: ChatMessageRequest):
-        text = (req.message or "").strip()
+    @app.post("/api/chat")
+    def chat(req: ChatRequest, user: dict = Depends(current_user)) -> dict[str, Any]:
+        text = req.message.strip()
         if not text:
             raise HTTPException(status_code=422, detail="Message cannot be empty")
-
-        now_iso = datetime.now(timezone.utc).isoformat()
-        p = text.lower()
-        deals_resp = get_deals()
-        pending_props = [pr for pr in state.proposals.values() if pr.status == "pending"]
-        unique_receipts = list({r.receipt_id: r for r in state.receipts.values()}.values())
-        executed_receipts = [r for r in unique_receipts if r.status == ReceiptStatus.EXECUTED]
-        guards_map = list_guards()
-
-        if any(k in p for k in ("brief", "standup", "morning", "summary")):
-            brief = get_founder_brief(x_workspace_id="WS-DEMO")
-            return ChatMessageResponse(
-                id=f"chat_{uuid4().hex[:8]}",
-                session_id=req.session_id,
-                reply=(
-                    f"**Founder Standup Summary ({brief.workspace_id})**\n"
-                    f"• **Headline:** {brief.headline}\n"
-                    f"• **Executed Actions:** {brief.metrics.actions_executed_count} (verified terminal receipts)\n"
-                    f"• **Pending Approvals:** {brief.metrics.pending_approvals_count}\n"
-                    f"• **Pipeline Total:** {format_inr(brief.metrics.total_pipeline_value_paise)}\n"
-                    f"• **Time Saved:** ~{brief.metrics.estimated_founder_minutes_saved} mins\n\n"
-                    f"_{brief.narration_text}_"
-                ),
-                timestamp=now_iso,
-                intent="FOUNDER_BRIEF",
-                facts_cited=[
-                    {"label": "Pipeline Total", "value": format_inr(brief.metrics.total_pipeline_value_paise), "source": "crm:pipeline"},
-                    {"label": "Executed Receipts", "value": str(brief.metrics.actions_executed_count), "source": "audit:receipts"},
-                ],
-                guards_checked=["G01", "G06", "G07", "G09"],
-                suggested_prompts=[
-                    "Show pending approvals",
-                    "Run quiet pipeline sweep",
-                    "Inspect latest execution receipt",
-                ],
-            )
-
-        if any(k in p for k in ("sweep", "quiet", "follow-up", "followup")):
-            quiet_deals = [d for d in deals_resp.deals if d.is_quiet]
-            quiet_summary = "\n".join(
-                f"• **{d.id} ({d.title})** — {d.contact_name} · Quiet {d.days_quiet}d · {format_inr(d.value_paise)}"
-                for d in quiet_deals
-            )
-            return ChatMessageResponse(
-                id=f"chat_{uuid4().hex[:8]}",
-                session_id=req.session_id,
-                reply=(
-                    f"I scanned all **{deals_resp.count} deals** against Mandate M-2026-10-15 Clause C2 (quiet threshold ≥ 3 days, max 5% discount):\n\n"
-                    f"{quiet_summary}\n\n"
-                    "Note: Priya Shah (D-3) has an active OOO auto-reply until 20 Oct 2026 and is automatically snoozed."
-                ),
-                timestamp=now_iso,
-                intent="QUIET_SWEEP_ANALYSIS",
-                facts_cited=[
-                    {"label": "Quiet Deals", "value": str(len(quiet_deals)), "source": "sweep:detector"},
-                    {"label": "Mandate Cap", "value": "5%", "source": "mandate:clause_c2"},
-                ],
-                guards_checked=["G01", "G04", "G05", "G10", "G12"],
-                suggested_prompts=[
-                    "Review Raju Malhotra's 20% discount request",
-                    "Check Deal D-4 Arjun Verma status",
-                    "Generate Founder Morning Brief",
-                ],
-            )
-
-        if any(k in p for k in ("raju", "d-1", "discount", "20%", "counter")):
-            raju_prop = state.proposals.get("PA-2026-10-15-001")
-            status_label = raju_prop.status if raju_prop else "pending"
-            return ChatMessageResponse(
-                id=f"chat_{uuid4().hex[:8]}",
-                session_id=req.session_id,
-                reply=(
-                    "**Deal D-1 (Raju Malhotra / Warehouse Automation) Guardrail Analysis:**\n"
-                    "1. **Guard G08 (Unverified Claim):** Customer claimed a verbal `20% discount` on a call — not present in `TrustedFacts`.\n"
-                    "2. **Guard G10 (Mandate Ceiling):** 20% exceeds the autonomous mandate cap of `5%`.\n"
-                    "3. **Grounded Counter-Offer (`PA-2026-10-15-001`):** Server-rendered at **₹4,56,000** (5% off ₹4,80,000 base) + **₹60,000/yr** annual support (`SUP-ANNUAL`), proposing slot **Thu 15:00–15:30 IST**.\n"
-                    f"4. **Current Status:** `{status_label.upper()}` (SHA-256 hash-bound)."
-                ),
-                timestamp=now_iso,
-                intent="DEAL_D1_REVIEW",
-                facts_cited=[
-                    {"label": "Counter-Offer", "value": "₹4,56,000", "source": "mandate_c2:rate_card"},
-                    {"label": "Annual Support", "value": "₹60,000/yr", "source": "catalog:SUP-ANNUAL"},
-                    {"label": "Slot", "value": "15:00 - 15:30 IST", "source": "calendar:slot_token"},
-                ],
-                guards_checked=["G01", "G04", "G06", "G07", "G08", "G09", "G10", "G11"],
-                suggested_prompts=[
-                    "Show all 6 pipeline deals",
-                    "Inspect terminal receipts",
-                    "Explain deterministic guards G01-G15",
-                ],
-            )
-
-        if any(k in p for k in ("guard", "g0", "g1", "policy", "safety", "security")):
-            guard_lines = "\n".join(f"• **{gid}:** {desc}" for gid, desc in list(guards_map.items())[:8])
-            return ChatMessageResponse(
-                id=f"chat_{uuid4().hex[:8]}",
-                session_id=req.session_id,
-                reply=(
-                    "**Deterministic Guard Registry (G01–G15):**\n"
-                    "Every outbound proposal is evaluated by pure functions (`ALLOW` / `ASK` / `BLOCK`). Blocking guards can never be overridden:\n\n"
-                    f"{guard_lines}\n"
-                    "• **G09–G15:** INR currency lock, mandate discount ceiling (5%), floor price check, opt-out enforcement, business hours, PII filter, and grammar check."
-                ),
-                timestamp=now_iso,
-                intent="GUARD_EXPLANATION",
-                facts_cited=[
-                    {"label": "Total Guards", "value": "15 (G01-G15)", "source": "policy:engine"},
-                    {"label": "Kill Switch", "value": "ACTIVE" if state.kill_switch_active else "STANDBY", "source": "ops:kill_switch"},
-                ],
-                guards_checked=list(guards_map.keys()),
-                suggested_prompts=[
-                    "Check operations status",
-                    "Show pending approvals",
-                    "Summarize Q4 revenue target",
-                ],
-            )
-
-        if any(k in p for k in ("deal", "pipeline", "revenue", "target", "q4")):
-            deal_lines = "\n".join(
-                f"• **{d.id} · {d.title}** ({d.contact_name}) — `{d.stage.value.upper()}` · **{format_inr(d.value_paise)}**"
-                for d in deals_resp.deals
-            )
-            return ChatMessageResponse(
-                id=f"chat_{uuid4().hex[:8]}",
-                session_id=req.session_id,
-                reply=(
-                    f"**Executive Pipeline Overview ({deals_resp.count} Deals · Total {format_inr(deals_resp.total_pipeline_paise)}):**\n"
-                    f"• **Q4 Revenue Progress:** ₹18,80,000 / ₹35,00,000 (**53.7%**)\n\n"
-                    f"{deal_lines}"
-                ),
-                timestamp=now_iso,
-                intent="PIPELINE_OVERVIEW",
-                facts_cited=[
-                    {"label": "Total Pipeline", "value": format_inr(deals_resp.total_pipeline_paise), "source": "crm:deals"},
-                    {"label": "Active Deals", "value": str(deals_resp.count), "source": "crm:deals"},
-                ],
-                guards_checked=["G01", "G05", "G09"],
-                suggested_prompts=[
-                    "Run quiet pipeline sweep",
-                    "Review Raju Malhotra's 20% discount request",
-                    "Generate Founder Morning Brief",
-                ],
-            )
-
-        return ChatMessageResponse(
-            id=f"chat_{uuid4().hex[:8]}",
-            session_id=req.session_id,
-            reply=(
-                f"I've evaluated **\"{text}\"** against your live workspace (`WS-DEMO`).\n\n"
-                f"• **Pipeline:** {deals_resp.count} deals totaling **{format_inr(deals_resp.total_pipeline_paise)}**\n"
-                f"• **Pending Founder Decisions:** {len(pending_props)} proposal(s)\n"
-                f"• **Verified Receipts:** {len(executed_receipts)} executed action(s)\n"
-                f"• **Autonomy Mode:** {'PAUSED (Kill Switch Engaged)' if state.kill_switch_active else 'Auto-pilot Active (Mandate M-2026-10-15)'}"
-            ),
-            timestamp=now_iso,
-            intent="GENERAL_ASSISTANCE",
-            facts_cited=[
-                {"label": "Pending Approvals", "value": str(len(pending_props)), "source": "authority:approvals"},
-                {"label": "Executed Actions", "value": str(len(executed_receipts)), "source": "audit:receipts"},
-            ],
-            guards_checked=["G01", "G04", "G05", "G06", "G07"],
-            suggested_prompts=[
-                "Summarize Q4 revenue target & deals",
-                "Review Raju Malhotra's 20% discount request",
-                "Generate Founder Morning Brief",
-            ],
+        llm_config_for(user)  # 409 before persisting anything if no key
+        session = store.get_chat_session(user["id"], req.session_id) if req.session_id else None
+        if session is None:
+            session = store.create_chat_session(user["id"], text[:60])
+        history = store.list_chat_messages(user["id"], session["id"])[-20:]
+        messages = [{"role": m["role"], "content": m["content"]} for m in history]
+        messages.append({"role": "user", "content": text})
+        result = call_llm(user, purpose="chat", system=chat_system_prompt(user), messages=messages)
+        user_msg = store.add_chat_message(user["id"], session["id"], "user", text)
+        reply = store.add_chat_message(
+            user["id"], session["id"], "assistant", result.text or "(empty response)", result.provider, result.model
         )
+        return {
+            "session_id": session["id"],
+            "session_title": session["title"],
+            "user_message": user_msg,
+            "reply": reply,
+            "usage": {"input_tokens": result.input_tokens, "output_tokens": result.output_tokens},
+        }
 
-    # -----------------------------------------------------------------------
-    # Settings & Kill Switch (T09.5) & Integrations
-    # -----------------------------------------------------------------------
-    def _settings_store() -> SettingsStore:
-        return SettingsStore(os.getenv("SETTINGS_STORE_PATH", "settings.local.json"))
+    @app.get("/api/chat/sessions")
+    def list_chat_sessions(user: dict = Depends(current_user)) -> dict[str, Any]:
+        return {"sessions": store.list_chat_sessions(user["id"])}
 
-    @app.get("/api/settings", response_model=SystemSettingsSchema)
-    def get_settings():
-        store = _settings_store()
-        return SystemSettingsSchema(
-            founder={
-                "name": state.founder_profile.get("name", "Meera Nair"),
-                "email": state.founder_profile.get("email", "meera@agency.in"),
-                "business_name": state.founder_profile.get("business_name", "Nair Growth Agency"),
-                "timezone": state.founder_profile.get("timezone", "Asia/Kolkata"),
-            },
-            google_account={
-                "connected": state.google_connected,
-                "email": state.google_email,
-                "token_status": state.google_token_status,
-                "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
-                "scopes": ["gmail.modify", "calendar"],
-            },
-            kill_switch={
-                "active": state.kill_switch_active,
-                "triggered_at": datetime.now(timezone.utc).isoformat() if state.kill_switch_active else None,
-                "reason": state.kill_switch_reason,
-            },
-            integrations=get_integrations_section(
-                store=store,
-                google_connected=state.google_connected,
-                google_tested_at=state.google_last_tested_at,
-                google_test_result=state.google_last_test_result,
-                google_test_message=state.google_last_test_message,
-            ),
+    @app.get("/api/chat/sessions/{session_id}")
+    def get_chat_session(session_id: str, user: dict = Depends(current_user)) -> dict[str, Any]:
+        session = store.get_chat_session(user["id"], session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Chat not found")
+        return {**session, "messages": store.list_chat_messages(user["id"], session_id)}
+
+    @app.put("/api/chat/sessions/{session_id}")
+    def rename_chat_session(session_id: str, req: RenameChatRequest, user: dict = Depends(current_user)) -> dict[str, str]:
+        if store.get_chat_session(user["id"], session_id) is None:
+            raise HTTPException(status_code=404, detail="Chat not found")
+        store.rename_chat_session(user["id"], session_id, req.title.strip())
+        return {"status": "renamed"}
+
+    @app.delete("/api/chat/sessions/{session_id}")
+    def delete_chat_session(session_id: str, user: dict = Depends(current_user)) -> dict[str, str]:
+        if not store.delete_chat_session(user["id"], session_id):
+            raise HTTPException(status_code=404, detail="Chat not found")
+        return {"status": "deleted"}
+
+    # ---------------------------------------------------------------- settings: API keys
+    def api_keys_view(user_id: str) -> dict[str, Any]:
+        user = store.get_user(user_id)
+        assert user is not None
+        saved = {k["provider"]: k for k in store.list_api_keys(user_id)}
+        providers = []
+        for pid, meta in llm.PROVIDERS.items():
+            entry = saved.get(pid)
+            providers.append(
+                {
+                    "provider": pid,
+                    "label": meta["label"],
+                    "default_model": meta["default_model"],
+                    "default_base_url": meta["base_url"],
+                    "key_hint": meta["key_hint"],
+                    "docs_url": meta["docs_url"],
+                    "configured": bool(entry and (entry["has_key"] or pid == "custom")),
+                    "masked_key": entry["masked_key"] if entry else None,
+                    "model": entry["model"] if entry else None,
+                    "base_url": entry["base_url"] if entry else None,
+                    "updated_at": entry["updated_at"] if entry else None,
+                    "last_tested_at": entry["last_tested_at"] if entry else None,
+                    "last_test_ok": entry["last_test_ok"] if entry else None,
+                    "last_test_message": entry["last_test_message"] if entry else None,
+                }
+            )
+        return {"active_provider": user["active_llm_provider"], "providers": providers}
+
+    def require_provider(provider: str) -> None:
+        if provider not in llm.PROVIDERS:
+            raise HTTPException(status_code=404, detail=f"Unknown provider '{provider}'")
+
+    @app.get("/api/settings/api-keys")
+    def get_api_keys(user: dict = Depends(current_user)) -> dict[str, Any]:
+        return api_keys_view(user["id"])
+
+    @app.put("/api/settings/api-keys/{provider}")
+    def put_api_key(provider: str, req: ApiKeyUpdate, user: dict = Depends(current_user)) -> dict[str, Any]:
+        require_provider(provider)
+        existing = store.get_api_key(user["id"], provider)
+        new_key = (req.api_key or "").strip() or None
+        if provider != "custom" and not new_key and not (existing and existing["api_key"]):
+            raise HTTPException(status_code=422, detail="Enter an API key")
+        base_url = (req.base_url or "").strip() or None
+        if base_url and not re.match(r"^https?://", base_url):
+            raise HTTPException(status_code=422, detail="Base URL must start with http:// or https://")
+        if provider == "custom" and not base_url:
+            raise HTTPException(status_code=422, detail="Custom provider needs a base URL")
+        model = (req.model or "").strip() or None
+        if provider == "custom" and not model:
+            raise HTTPException(status_code=422, detail="Custom provider needs a model name")
+        store.upsert_api_key(user["id"], provider, api_key=new_key, model=model, base_url=base_url)
+        if req.make_active or not user["active_llm_provider"]:
+            store.set_active_provider(user["id"], provider)
+        store.add_activity(user["id"], type="settings", title=f"{llm.PROVIDERS[provider]['label']} key saved")
+        return api_keys_view(user["id"])
+
+    @app.delete("/api/settings/api-keys/{provider}")
+    def delete_api_key(provider: str, user: dict = Depends(current_user)) -> dict[str, Any]:
+        require_provider(provider)
+        store.delete_api_key(user["id"], provider)
+        if user["active_llm_provider"] == provider:
+            remaining = [k["provider"] for k in store.list_api_keys(user["id"])]
+            store.set_active_provider(user["id"], remaining[0] if remaining else None)
+        store.add_activity(user["id"], type="settings", title=f"{llm.PROVIDERS[provider]['label']} key removed")
+        return api_keys_view(user["id"])
+
+    @app.put("/api/settings/active-provider")
+    def set_active_provider(req: ActiveProviderRequest, user: dict = Depends(current_user)) -> dict[str, Any]:
+        if req.provider is not None:
+            require_provider(req.provider)
+            if store.get_api_key(user["id"], req.provider) is None:
+                raise HTTPException(status_code=409, detail="Save a key for this provider first")
+        store.set_active_provider(user["id"], req.provider)
+        return api_keys_view(user["id"])
+
+    @app.post("/api/settings/api-keys/{provider}/test")
+    def test_api_key(provider: str, user: dict = Depends(current_user)) -> dict[str, Any]:
+        require_provider(provider)
+        try:
+            config = llm.resolve_config(provider, store.get_api_key(user["id"], provider))
+        except llm.LLMNotConfiguredError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        ok, message = llm.test_connection(config)
+        store.record_api_key_test(user["id"], provider, ok, message)
+        return {"provider": provider, "ok": ok, "message": message, "tested_at": iso(utcnow())}
+
+    @app.get("/api/settings/usage")
+    def get_usage(user: dict = Depends(current_user)) -> dict[str, Any]:
+        rows = store.usage_summary(user["id"])
+        return {
+            "by_model": rows,
+            "total_requests": sum(r["requests"] for r in rows),
+            "total_input_tokens": sum(r["input_tokens"] or 0 for r in rows),
+            "total_output_tokens": sum(r["output_tokens"] or 0 for r in rows),
+        }
+
+    # ---------------------------------------------------------------- settings: email
+    @app.get("/api/settings/email")
+    def get_email_settings(user: dict = Depends(current_user)) -> dict[str, Any]:
+        return {"configured": store.get_email_settings(user["id"]) is not None, "settings": store.get_email_settings(user["id"])}
+
+    @app.put("/api/settings/email")
+    def put_email_settings(req: EmailSettingsUpdate, user: dict = Depends(current_user)) -> dict[str, Any]:
+        from_email = req.from_email.strip().lower()
+        if not EMAIL_RE.match(from_email):
+            raise HTTPException(status_code=422, detail="From address is not a valid email")
+        existing = store.get_email_settings(user["id"])
+        if not req.password and not (existing and existing["has_password"]):
+            raise HTTPException(status_code=422, detail="Enter the SMTP password or app password")
+        store.upsert_email_settings(
+            user["id"],
+            host=req.host.strip(),
+            port=req.port,
+            username=req.username.strip(),
+            password=(req.password or "").strip() or None,
+            from_email=from_email,
+            use_ssl=req.use_ssl,
         )
+        store.add_activity(user["id"], type="settings", title="Email (SMTP) account saved", description=from_email)
+        return get_email_settings(user)
 
-    @app.put("/api/integrations/evolus", response_model=EvolusSettingsView)
-    def update_evolus_integration(req: EvolusConfigUpdate):
-        store = _settings_store()
-        cfg = store.load_evolus()
-        if req.api_key is not None:
-            trimmed = req.api_key.strip()
-            cfg.api_key = trimmed if trimmed != "" else None
-        store.save_evolus(cfg)
-        return get_evolus_view(cfg)
+    @app.delete("/api/settings/email")
+    def delete_email_settings(user: dict = Depends(current_user)) -> dict[str, Any]:
+        store.delete_email_settings(user["id"])
+        store.add_activity(user["id"], type="settings", title="Email (SMTP) account removed")
+        return {"configured": False, "settings": None}
 
-    @app.put("/api/integrations/model", response_model=ModelSettingsView)
-    def update_model_integration(req: ModelConfigUpdate):
-        store = _settings_store()
-        cfg = store.load_model()
-        if req.base_url is not None:
-            trimmed = req.base_url.strip()
-            cfg.base_url = trimmed if trimmed != "" else None
-        if req.model_name is not None:
-            trimmed = req.model_name.strip()
-            cfg.model_name = trimmed if trimmed != "" else None
-        if req.api_key is not None:
-            trimmed = req.api_key.strip()
-            cfg.api_key = trimmed if trimmed != "" else None
-        store.save_model(cfg)
-        return get_model_view(cfg)
+    @app.post("/api/settings/email/test")
+    def test_email_settings(user: dict = Depends(current_user)) -> dict[str, Any]:
+        smtp = store.get_email_settings(user["id"], include_secret=True)
+        if smtp is None:
+            raise HTTPException(status_code=409, detail="Save SMTP settings first")
+        ok, message = mailer.test_smtp(smtp)
+        store.record_email_test(user["id"], ok, message)
+        return {"ok": ok, "message": message, "tested_at": iso(utcnow())}
 
-    @app.put("/api/integrations/google", response_model=GoogleSettingsView)
-    def update_google_integration(req: GoogleConnectionUpdate):
-        if req.action == "connect":
-            state.google_connected = True
-        elif req.action == "disconnect":
-            state.google_connected = False
-        return get_google_view(
-            connected=state.google_connected,
-            last_tested_at=state.google_last_tested_at,
-            last_test_result=state.google_last_test_result,
-            last_test_message=state.google_last_test_message,
-        )
-
-    @app.post("/api/integrations/{name}/test", response_model=IntegrationTestResult)
-    def test_integration(name: str):
-        if name == "evolus":
-            store = _settings_store()
-            cfg = store.load_evolus()
-            if not (cfg.api_key and cfg.api_key.strip()):
-                raise HTTPException(status_code=409, detail="evolus is not configured")
-            result = state.adapters.evolus.test_connection(api_key=cfg.api_key)
-            now = datetime.now(timezone.utc)
-            cfg.last_tested_at = now.isoformat()
-            cfg.last_test_result = "ok" if result.ok else "failed"
-            cfg.last_test_message = result.message
-            store.save_evolus(cfg)
-            return IntegrationTestResult(
-                name="evolus",
-                ok=result.ok,
-                message=result.message,
-                tested_at=now,
-            )
-        elif name == "model":
-            store = _settings_store()
-            cfg = store.load_model()
-            if not (cfg.base_url and cfg.base_url.strip()):
-                raise HTTPException(status_code=409, detail="model is not configured")
-            result = state.adapters.model.test_connection(
-                base_url=cfg.base_url,
-                model_name=cfg.model_name,
-                api_key=cfg.api_key,
-            )
-            now = datetime.now(timezone.utc)
-            cfg.last_tested_at = now.isoformat()
-            cfg.last_test_result = "ok" if result.ok else "failed"
-            cfg.last_test_message = result.message
-            store.save_model(cfg)
-            return IntegrationTestResult(
-                name="model",
-                ok=result.ok,
-                message=result.message,
-                tested_at=now,
-            )
-        elif name == "google":
-            if not state.google_connected:
-                raise HTTPException(status_code=409, detail="google is not connected")
-            result = state.adapters.google.test_connection()
-            now = datetime.now(timezone.utc)
-            state.google_last_tested_at = now
-            state.google_last_test_result = "ok" if result.ok else "failed"
-            state.google_last_test_message = result.message
-            return IntegrationTestResult(
-                name="google",
-                ok=result.ok,
-                message=result.message,
-                tested_at=now,
-            )
-        else:
-            raise HTTPException(status_code=404, detail=f"Integration '{name}' not found")
-
+    # ---------------------------------------------------------------- settings: kill switch
     @app.post("/api/settings/kill-switch")
-    def toggle_kill_switch(req: KillSwitchRequest):
-        state.kill_switch_active = req.active
-        state.kill_switch_reason = req.reason or ("Manually toggled" if req.active else None)
-        state.executor.kill_switch_active = req.active
-        return {
-            "status": "ok",
-            "active": state.kill_switch_active,
-            "kill_switch_active": state.kill_switch_active,
-            "message": (
-                "Emergency kill switch active. All mandate sweeps halted."
-                if state.kill_switch_active
-                else "Kill switch released. Autonomous sweeps normal."
-            ),
-        }
-
-    # -----------------------------------------------------------------------
-    # Dev / Test Integration Endpoints
-    # -----------------------------------------------------------------------
-    @app.post("/api/dev/inject-inbound")
-    def inject_inbound(req: InjectInboundRequest):
-        msg = InboundEmailMessage(
-            message_id=req.message_id,
-            from_email=req.from_email,
-            to_email=req.to_email,
-            subject=req.subject,
-            body=req.body,
-            from_name=req.from_name,
-            headers=req.headers,
+    def toggle_kill_switch(req: KillSwitchRequest, user: dict = Depends(current_user)) -> dict[str, Any]:
+        updated = store.set_kill_switch(user["id"], req.active, req.reason or ("Paused by founder" if req.active else None))
+        store.add_activity(
+            user["id"],
+            type="kill_switch",
+            title="Kill switch engaged" if req.active else "Kill switch released",
+            description=updated["kill_switch_reason"] or "",
         )
-        result = state.inbound_pipeline.process(msg)
-        return {
-            "status": result.status,
-            "verdict": result.verdict,
-            "intent": result.classification.intent,
-            "action_type": result.classification.action_type,
-            "guards_triggered": result.guards_triggered,
-            "task_id": result.task_id,
-            "escalation_id": result.escalation_id,
+        return {"active": updated["kill_switch_active"], "reason": updated["kill_switch_reason"]}
+
+    # ---------------------------------------------------------------- operations
+    @app.get("/api/v1/ops/status")
+    def ops_status(user: dict = Depends(current_user)) -> dict[str, Any]:
+        db_ok = store.health_check()
+        provider = user.get("active_llm_provider")
+        key_entry = next((k for k in store.list_api_keys(user["id"]) if k["provider"] == provider), None)
+        smtp = store.get_email_settings(user["id"])
+
+        def test_status(entry: dict[str, Any] | None) -> str:
+            if entry is None:
+                return "not_configured"
+            if entry.get("last_test_ok") is False:
+                return "degraded"
+            return "ready"
+
+        components = {
+            "api": {"status": "ready", "detail": "API process is serving requests"},
+            "database": {
+                "status": "ready" if db_ok else "unavailable",
+                "detail": store.backend_label if db_ok else f"{store.backend_label} health check failed",
+            },
+            "ai_provider": {
+                "status": test_status(key_entry),
+                "detail": (
+                    f"{llm.PROVIDERS[provider]['label']} · {key_entry['model'] or llm.PROVIDERS[provider]['default_model']}"
+                    + (f" · last test: {key_entry['last_test_message']}" if key_entry and key_entry["last_test_message"] else "")
+                    if provider and key_entry
+                    else "Add your own API key in Settings → API Keys"
+                ),
+            },
+            "email": {
+                "status": test_status(smtp),
+                "detail": (
+                    f"{smtp['from_email']} via {smtp['host']}:{smtp['port']}" if smtp else "Approved drafts are recorded for manual sending"
+                ),
+            },
+            "kill_switch": {
+                "status": "degraded" if user["kill_switch_active"] else "ready",
+                "detail": user["kill_switch_reason"] or ("Engaged" if user["kill_switch_active"] else "Released"),
+            },
         }
-
-    @app.post("/api/dev/run-sweep")
-    def run_sweep():
-        deals = get_demo_sweep_deals()
-        for d in deals:
-            if d.contact_id in state.inbound_pipeline.opted_out_contacts:
-                d.do_not_contact = True
-            if d.contact_id in state.inbound_pipeline.snoozed_contacts:
-                d.snooze_until = state.inbound_pipeline.snoozed_contacts[d.contact_id]
-
-        res = state.sweep_service.sweep(deals)
-        for p in res.proposals_created:
-            schema = ProposedActionSchema(
-                ref=p.ref,
-                kind=p.kind,
-                deal_id=p.deal_id,
-                deal_title=p.deal_title,
-                contact_name=p.contact_name,
-                contact_email=p.contact_email,
-                subject=p.subject,
-                rendered_body=p.rendered_body,
-                rendered_hash=p.rendered_hash,
-                facts_used=[FactEvidence(**f) for f in p.facts_used],
-                risk_flags=[RiskFlagSchema(**f) for f in p.risk_flags],
-                policy_verdict=p.policy_verdict,
-                policy_reasons=p.policy_reasons,
-                created_at=p.created_at,
-                expires_at=p.expires_at,
-                status=p.status,
-                execute_after=p.execute_after,
-            )
-            state.proposals[p.ref] = schema
-        return {
-            "scanned": res.total_deals_scanned,
-            "eligible": res.eligible_deals_count,
-            "proposals_created": len(res.proposals_created),
-            "skipped": res.skipped,
-        }
-
-    @app.post("/api/dev/reset-demo")
-    def reset_demo():
-        state.reset()
-        return {"status": "reset_complete"}
+        overall = "ready" if all(c["status"] == "ready" for c in components.values()) else "degraded"
+        return {"status": overall, "checked_at": iso(utcnow()), "components": components}
 
     return app
 

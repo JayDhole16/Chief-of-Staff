@@ -1,13 +1,14 @@
-.PHONY: setup check test lint format clean up down smoke-app help bench demo-check
+.PHONY: setup check test lint format clean up down smoke-app help bench dev-api dev-web
 
 help:
 	@echo "Chief-of-Staff Build Commands"
 	@echo ""
 	@echo "  make setup        Install dependencies"
-	@echo "  make check        Run all checks (test, lint, format, demo-check)"
+	@echo "  make check        Run lint and tests"
 	@echo "  make test         Run pytest"
 	@echo "  make bench        Run benchmark harness (RUNNER=fake)"
-	@echo "  make demo-check   Run the golden-path demo check"
+	@echo "  make dev-api      Run the API on http://localhost:8000 with reload"
+	@echo "  make dev-web      Run the web app on http://localhost:5173"
 	@echo "  make lint         Run ruff and mypy"
 	@echo "  make format       Run black formatter"
 	@echo "  make clean        Remove cache and build artifacts"
@@ -24,10 +25,13 @@ test:
 bench:
 	python -m bench.harness.runner --runner $${RUNNER:-fake}
 
-demo-check:
-	python scripts/demo_check.py
+dev-api:
+	python -m uvicorn backend.main:app --port 8000 --reload
 
-check: lint test demo-check
+dev-web:
+	cd frontend && npm run dev
+
+check: lint test
 
 lint:
 	ruff check backend tests
@@ -49,4 +53,4 @@ down:
 	docker compose down
 
 smoke-app:
-	python scripts/smoke_app.py
+	python scripts/smoke_app.py

@@ -58,6 +58,9 @@ jobs:
           backend/config.py
           backend/main.py
           backend/api/app.py
+          backend/services/app_store.py
+          backend/services/llm.py
+          backend/services/mailer.py
           backend/db/migrate.py
           backend/services/executor.py
           backend/services/tasks.py
@@ -65,8 +68,7 @@ jobs:
           backend/policy/engine.py
           backend/worker/health.py
           tests/test_config.py
-          tests/test_golden_path.py
-          tests/test_read_api_endpoints.py
+          tests/test_api.py
           tests/test_tasks_service.py
           tests/test_policy_engine.py
           tests/test_tasks_postgres.py
