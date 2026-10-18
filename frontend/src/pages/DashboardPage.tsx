@@ -449,6 +449,7 @@ export function DashboardPage({ session, onLogout, onUpdateSession }: DashboardP
     setSessionThreads((prev) => ({ ...prev, [newId]: [] }))
     setActiveSessionId(newId)
     setView('chat')
+    setSidebarCollapsed(false)
     setInputText('')
     setEditingMessageId(null)
     setTimeout(() => inputRef.current?.focus(), 50)
@@ -932,15 +933,10 @@ export function DashboardPage({ session, onLogout, onUpdateSession }: DashboardP
           {/* Logo 4-Pointed Star Button */}
           <button
             type="button"
-            onClick={() => {
-              if (view === 'chat') {
-                setSidebarCollapsed((prev) => !prev)
-              } else {
-                setView('chat')
-                setSidebarCollapsed(false)
-              }
-            }}
-            title="Chief of Staff"
+            data-testid="top-left-logo-button"
+            onClick={handleStartNewChat}
+            title="Chief of Staff — Start New Chat"
+            aria-label="Chief of Staff — Start New Chat"
             style={{
               width: '44px',
               height: '44px',
@@ -1439,11 +1435,29 @@ export function DashboardPage({ session, onLogout, onUpdateSession }: DashboardP
                 </button>
 
                 {/* 4-Pointed Star Avatar */}
-                <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#081C13', border: '1px solid rgba(16, 185, 129, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  data-testid="chat-header-logo-button"
+                  onClick={handleStartNewChat}
+                  title="Chief of Staff — Start New Chat"
+                  aria-label="Chief of Staff — Start New Chat"
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    backgroundColor: '#081C13',
+                    border: '1px solid rgba(16, 185, 129, 0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    padding: 0,
+                  }}
+                >
                   <svg style={{ width: '16px', height: '16px', color: 'var(--emerald-glow)' }} viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 0L14.6 9.4L24 12L14.6 14.6L12 24L9.4 14.6L0 12L9.4 9.4L12 0Z" />
                   </svg>
-                </div>
+                </button>
 
                 {/* Title + Verified Green Checkmark */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

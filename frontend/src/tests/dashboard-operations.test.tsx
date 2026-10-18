@@ -102,4 +102,35 @@ describe('Operations dashboard (T13) & Chatbot UX Bug Fixes', () => {
     fireEvent.click(screen.getByTestId('profile-logout-button'))
     expect(onLogout).toHaveBeenCalledTimes(1)
   })
+
+  it('clicking on top-left logo starts a new chat session and switches to chat view', () => {
+    render(<DashboardPage session={session} onLogout={() => undefined} />)
+
+    // Switch to Deals tab first
+    fireEvent.click(screen.getByTestId('rail-deals-button'))
+    expect(screen.queryByPlaceholderText(/Type a message/i)).not.toBeInTheDocument()
+
+    // Click the top-left logo button
+    const logoBtn = screen.getByTestId('top-left-logo-button')
+    fireEvent.click(logoBtn)
+
+    // View should switch back to chat and chat input should be present
+    expect(screen.getByPlaceholderText(/Type a message/i)).toBeInTheDocument()
+    // Sidebar should be expanded
+    const chatSidebar = screen.getByTestId('chat-history-sidebar')
+    expect(chatSidebar).toHaveAttribute('aria-hidden', 'false')
+    // Active session title should be New Executive Session
+    expect(screen.getAllByText(/New Executive Session/i).length).toBeGreaterThan(0)
+  })
+
+  it('clicking on chat header logo avatar also starts a new chat session', () => {
+    render(<DashboardPage session={session} onLogout={() => undefined} />)
+
+    const headerLogoBtn = screen.getByTestId('chat-header-logo-button')
+    fireEvent.click(headerLogoBtn)
+
+    expect(screen.getByPlaceholderText(/Type a message/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/New Executive Session/i).length).toBeGreaterThan(0)
+  })
 })
+
