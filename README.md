@@ -46,6 +46,34 @@ The API reads `DATABASE_URL` from `.env`. Use `127.0.0.1`, not `localhost`: on W
 `localhost` tries IPv6 first and every connection stalls for seconds. Leave
 `DATABASE_URL` empty to fall back to SQLite at `data/app.db`.
 
+## Google sign-in (Gmail + Calendar)
+
+Optional. When it's enabled, each user can click **Connect Google** (API Keys page) to send
+approved follow-ups from their own Gmail and book meetings with Google Meet links on
+their calendar. Only two permissions are requested: `gmail.send` and `calendar.events`.
+The app never reads the inbox. Setup is a one-time job for the app owner:
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create or select a project.
+2. **APIs & Services → Library**: enable **Gmail API** and **Google Calendar API**.
+3. **Google Auth Platform** (OAuth consent screen): choose *External*, set the app name
+   and support email, and under **Audience** add every Google account that will connect
+   as a *test user*.
+4. **Credentials → Create credentials → OAuth client ID → Web application**, with these
+   authorized redirect URIs:
+   - `http://localhost:5173/api/integrations/google/callback` (local dev)
+   - `http://localhost:3000/api/integrations/google/callback` (Docker)
+5. Put the client ID and secret in `.env` as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`,
+   then restart the API (`docker compose up -d api`, or restart uvicorn).
+
+While the app is in *Testing* mode, Google shows an "unverified app" warning (choose
+*Continue*) and refresh tokens expire after 7 days, so users reconnect weekly. Publishing
+the app requires Google's verification for these scopes.
+
+Sending order on approval: **Gmail** if connected, otherwise **SMTP** if configured,
+otherwise the draft is recorded for manual sending. Meetings need Google. Before you
+approve, the calendar is checked for conflicts, and the event's time and attendee are
+part of the approval hash.
+
 ## Using the app
 
 No AI keys are configured on the server. Each user brings their own:
@@ -58,7 +86,8 @@ No AI keys are configured on the server. Each user brings their own:
 3. **Deals → Draft follow-up** (or *Draft for all quiet deals*) → review the draft in
    **Approvals**, edit if needed, then *Approve & send*.
 4. **Chat** → ask about your pipeline; answers are grounded in your own data.
-5. *(Optional)* **API Keys → Email sending (SMTP)** so approvals send real email.
+5. *(Optional)* **API Keys → Connect Google** (Gmail + Calendar) or **Email sending (SMTP)** so
+   approvals send real email; with Google, **Deals → Schedule meeting** books calendar invites.
 
 Saved API keys and SMTP passwords are encrypted with `APP_ENCRYPTION_KEY` (or a key
 generated once at `APP_KEY_FILE`). The Docker API and a locally run API share one
@@ -94,6 +123,7 @@ All routes except auth and health require the `X-Session-ID` header (or
 | Chat | `POST /api/chat`, `GET /api/chat/sessions`, `GET/PUT/DELETE /api/chat/sessions/{id}` |
 | API keys | `GET /api/settings/api-keys`, `PUT/DELETE /api/settings/api-keys/{provider}`, `POST /api/settings/api-keys/{provider}/test`, `PUT /api/settings/active-provider`, `GET /api/settings/usage` |
 | Email | `GET/PUT/DELETE /api/settings/email`, `POST /api/settings/email/test` |
+| Google | `GET/DELETE /api/integrations/google`, `POST /api/integrations/google/connect`, `GET /api/integrations/google/callback`, `POST /api/integrations/google/test`, `POST /api/deals/{id}/meeting` |
 | Ops | `POST /api/settings/kill-switch`, `GET /api/v1/ops/status`, `GET /healthz`, `GET /readyz` |
 
 Interactive docs: http://localhost:8000/docs
@@ -101,6 +131,6 @@ Interactive docs: http://localhost:8000/docs
 ## Known limits
 
 - Each API process holds one database connection; scale with more workers or a pool if needed.
-- Email sending is plain-text SMTP. There is no Gmail OAuth or inbound-mail ingestion yet.
+- Emails are plain text. Incoming mail is not read (that needs a restricted Gmail scope and Google's security review).
 - The worker container exposes health only; drafting and sending happen in the API request.
 - The benchmark harness under `bench/` runs on the deterministic fake runner, not on a model.

@@ -31,6 +31,10 @@ services:
       # Used only when APP_ENCRYPTION_KEY is empty: generated once and kept on the volume.
       APP_KEY_FILE: /data/.app_encryption_key
       CORS_ORIGINS: http://localhost:3000
+      # Google sign-in (Gmail + Calendar). Redirect URI = APP_BASE_URL + /api/integrations/google/callback
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      APP_BASE_URL: http://localhost:3000
     volumes:
       - app_data:/data
     healthcheck:
