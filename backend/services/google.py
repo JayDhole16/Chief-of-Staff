@@ -16,7 +16,7 @@ import secrets
 from dataclasses import dataclass
 from email.message import EmailMessage
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from uuid import uuid4
 
 import httpx
@@ -165,24 +165,44 @@ class GoogleClient:
         start_utc: str,
         end_utc: str,
         timezone: str,
-        attendee_email: str,
+        attendees: list[str] | None = None,
         with_meet: bool = True,
+        reminder_minutes: int | None = None,
     ) -> dict[str, Any]:
         event: dict[str, Any] = {
             "summary": summary,
             "description": description,
             "start": {"dateTime": start_utc, "timeZone": timezone},
             "end": {"dateTime": end_utc, "timeZone": timezone},
-            "attendees": [{"email": attendee_email}],
-            "reminders": {"useDefault": True},
+            "attendees": [{"email": email} for email in (attendees or [])],
+            "reminders": _reminders(reminder_minutes),
         }
-        query = {"sendUpdates": "all"}
+        query = {"sendUpdates": "all" if attendees else "none"}
         if with_meet:
             event["conferenceData"] = {
                 "createRequest": {"requestId": uuid4().hex, "conferenceSolutionKey": {"type": "hangoutsMeet"}}
             }
             query["conferenceDataVersion"] = "1"
         return self._post(f"{CALENDAR_EVENTS_URL}?{urlencode(query)}", access_token, event)
+
+    def get_event(self, access_token: str, event_id: str) -> dict[str, Any]:
+        return self._get(f"{CALENDAR_EVENTS_URL}/{quote(event_id, safe='')}", access_token)
+
+    def update_event(self, access_token: str, event_id: str, changes: dict[str, Any], *, notify: bool = True) -> dict[str, Any]:
+        """PATCH only the given fields (summary, description, start, end, reminders)."""
+        url = f"{CALENDAR_EVENTS_URL}/{quote(event_id, safe='')}?{urlencode({'sendUpdates': 'all' if notify else 'none'})}"
+        return self._request("PATCH", url, access_token, changes)
+
+    def delete_event(self, access_token: str, event_id: str, *, notify: bool = True) -> None:
+        url = f"{CALENDAR_EVENTS_URL}/{quote(event_id, safe='')}?{urlencode({'sendUpdates': 'all' if notify else 'none'})}"
+        try:
+            response = self.http.delete(url, headers={"Authorization": f"Bearer {access_token}"})
+        except httpx.HTTPError as exc:
+            raise GoogleError(f"Could not reach Google: {exc}") from exc
+        if response.status_code == 410:
+            return  # already deleted
+        if response.status_code >= 400:
+            _checked(response)
 
     # ------------------------------------------------------------------ HTTP helpers
     def _get(self, url: str, access_token: str) -> dict[str, Any]:
@@ -193,11 +213,20 @@ class GoogleClient:
         return _checked(response)
 
     def _post(self, url: str, access_token: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", url, access_token, payload)
+
+    def _request(self, method: str, url: str, access_token: str, payload: dict[str, Any]) -> dict[str, Any]:
         try:
-            response = self.http.post(url, json=payload, headers={"Authorization": f"Bearer {access_token}"})
+            response = self.http.request(method, url, json=payload, headers={"Authorization": f"Bearer {access_token}"})
         except httpx.HTTPError as exc:
             raise GoogleError(f"Could not reach Google: {exc}") from exc
         return _checked(response)
+
+
+def _reminders(minutes: int | None) -> dict[str, Any]:
+    if minutes is None:
+        return {"useDefault": True}
+    return {"useDefault": False, "overrides": [{"method": "popup", "minutes": max(0, min(int(minutes), 40320))}]}
 
 
 def _json(response: httpx.Response) -> dict[str, Any]:
@@ -216,6 +245,10 @@ def _checked(response: httpx.Response) -> dict[str, Any]:
     message = err.get("message") if isinstance(err, dict) else (err or response.text[:200])
     if response.status_code == 401:
         raise GoogleAuthRevokedError("Google session expired or was revoked. Reconnect Google.")
+    if response.status_code == 404:
+        raise GoogleError("Google could not find that item (it may have been deleted).")
+    if response.status_code == 429 or (response.status_code == 403 and "rateLimit" in str(err)):
+        raise GoogleError("Google rate limit reached. Wait a minute and try again.")
     if response.status_code == 403:
         raise GoogleError(
             f"Google denied the request (403): {message}. Make sure the Gmail and Calendar APIs are "

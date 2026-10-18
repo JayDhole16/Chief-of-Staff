@@ -8,7 +8,10 @@ dashboard can show exactly what each founder is spending.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+import logging
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 import anthropic
@@ -142,6 +145,19 @@ def test_connection(config: LLMConfig) -> tuple[bool, str]:
 def _complete_anthropic(
     config: LLMConfig, system: str, messages: list[dict[str, str]], max_tokens: int
 ) -> LLMResult:
+    response = _anthropic_create(config, system=system, messages=messages, max_tokens=max_tokens)
+    text = "".join(block.text for block in response.content if block.type == "text").strip()
+    return LLMResult(
+        text=text,
+        provider=config.provider,
+        model=response.model or config.model,
+        input_tokens=response.usage.input_tokens or 0,
+        output_tokens=response.usage.output_tokens or 0,
+    )
+
+
+def _anthropic_create(config: LLMConfig, **params: Any) -> Any:
+    """One Messages API call with readable errors; refusal fallback on supported models."""
     client = anthropic.Anthropic(
         api_key=config.api_key,
         base_url=config.base_url or None,
@@ -152,19 +168,12 @@ def _complete_anthropic(
         if config.model in _ANTHROPIC_FALLBACK_MODELS:
             response = client.beta.messages.create(
                 model=config.model,
-                max_tokens=max_tokens,
-                system=system,
-                messages=messages,  # type: ignore[arg-type]
                 betas=["server-side-fallback-2026-07-01"],
                 fallbacks="default",
+                **params,
             )
         else:
-            response = client.messages.create(
-                model=config.model,
-                max_tokens=max_tokens,
-                system=system,
-                messages=messages,  # type: ignore[arg-type]
-            )
+            response = client.messages.create(model=config.model, **params)
     except anthropic.AuthenticationError as exc:
         raise LLMError("Anthropic rejected the API key (401). Check the key in Settings → API Keys.") from exc
     except anthropic.PermissionDeniedError as exc:
@@ -177,17 +186,9 @@ def _complete_anthropic(
         raise LLMError(f"Anthropic API error {exc.status_code}: {exc.message}") from exc
     except anthropic.APIConnectionError as exc:
         raise LLMError("Could not reach the Anthropic API. Check the server's network access.") from exc
-
     if response.stop_reason == "refusal":
         raise LLMError("The model declined to answer this request.")
-    text = "".join(block.text for block in response.content if block.type == "text").strip()
-    return LLMResult(
-        text=text,
-        provider=config.provider,
-        model=response.model or config.model,
-        input_tokens=response.usage.input_tokens or 0,
-        output_tokens=response.usage.output_tokens or 0,
-    )
+    return response
 
 
 def _http_error_message(provider_label: str, response: httpx.Response) -> str:
@@ -283,3 +284,189 @@ def _complete_gemini(
         input_tokens=int(usage.get("promptTokenCount") or 0),
         output_tokens=int(usage.get("candidatesTokenCount") or 0),
     )
+
+
+# ---------------------------------------------------------------------------
+# Agent loop: native tool/function calling for every provider
+# ---------------------------------------------------------------------------
+logger = logging.getLogger("cos.agent")
+
+# A tool handler receives (tool_name, arguments) and returns (result, is_error).
+ToolHandler = Callable[[str, dict[str, Any]], "tuple[Any, bool]"]
+
+
+@dataclass
+class AgentResult:
+    text: str
+    provider: str
+    model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    steps: int = 0
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+
+
+def run_agent(
+    config: LLMConfig,
+    *,
+    system: str,
+    messages: list[dict[str, str]],
+    tools: list[dict[str, Any]],
+    handle_tool: ToolHandler,
+    max_steps: int = 8,
+    max_tokens: int = 8000,
+) -> AgentResult:
+    """Let the model call tools until it answers in text (or max_steps is reached).
+
+    ``tools`` are ``{"name", "description", "parameters": <JSON schema>}``. Tool failures
+    are returned to the model as error results so it can recover or explain; only
+    provider failures raise LLMError.
+    """
+    result = AgentResult(text="", provider=config.provider, model=config.model)
+
+    def call_tool(name: str, args: Any) -> tuple[Any, bool]:
+        if not isinstance(args, dict):
+            args = {}
+        try:
+            output, is_error = handle_tool(name, args)
+        except Exception as exc:  # a tool bug must never break the conversation
+            logger.exception("tool %s crashed", name)
+            output, is_error = {"error": f"Tool '{name}' failed unexpectedly: {exc}"}, True
+        result.tool_calls.append({"name": name, "arguments": args, "ok": not is_error, "output": output})
+        if is_error:
+            logger.info("tool %s returned an error: %s", name, output)
+        return output, is_error
+
+    if config.provider == "anthropic":
+        _agent_anthropic(config, system, messages, tools, call_tool, max_steps, max_tokens, result)
+    elif config.provider == "gemini":
+        _agent_gemini(config, system, messages, tools, call_tool, max_steps, max_tokens, result)
+    else:
+        _agent_openai(config, system, messages, tools, call_tool, max_steps, max_tokens, result)
+    if not result.text:
+        result.text = (
+            "I ran out of steps before finishing. Here is what I did so far: "
+            + ", ".join(f"{c['name']} ({'ok' if c['ok'] else 'failed'})" for c in result.tool_calls)
+            if result.tool_calls
+            else "I don't have an answer for that."
+        )
+    return result
+
+
+def _agent_anthropic(config, system, messages, tools, call_tool, max_steps, max_tokens, result) -> None:
+    convo: list[dict[str, Any]] = [dict(m) for m in messages]
+    tool_defs = [{"name": t["name"], "description": t["description"], "input_schema": t["parameters"]} for t in tools]
+    for _ in range(max_steps):
+        response = _anthropic_create(config, system=system, messages=convo, tools=tool_defs, max_tokens=max_tokens)
+        result.steps += 1
+        result.model = response.model or config.model
+        result.input_tokens += response.usage.input_tokens or 0
+        result.output_tokens += response.usage.output_tokens or 0
+        if response.stop_reason != "tool_use":
+            result.text = "".join(b.text for b in response.content if b.type == "text").strip()
+            return
+        # Pass the assistant turn back unchanged (including any thinking blocks).
+        convo.append({"role": "assistant", "content": response.content})
+        tool_results = []
+        for block in response.content:
+            if block.type == "tool_use":
+                output, is_error = call_tool(block.name, block.input)
+                tool_results.append(
+                    {"type": "tool_result", "tool_use_id": block.id, "content": json.dumps(output, default=str), "is_error": is_error}
+                )
+        convo.append({"role": "user", "content": tool_results})
+
+
+def _agent_openai(config, system, messages, tools, call_tool, max_steps, max_tokens, result) -> None:
+    label = PROVIDERS[config.provider]["label"]
+    headers = {"Content-Type": "application/json"}
+    if config.api_key:
+        headers["Authorization"] = f"Bearer {config.api_key}"
+    url = f"{(config.base_url or '').rstrip('/')}/chat/completions"
+    convo: list[dict[str, Any]] = [{"role": "system", "content": system}, *messages]
+    tool_defs = [
+        {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}}
+        for t in tools
+    ]
+    for _ in range(max_steps):
+        payload = {"model": config.model, "messages": convo, "tools": tool_defs, "max_tokens": max_tokens}
+        try:
+            response = httpx.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
+        except httpx.HTTPError as exc:
+            raise LLMError(f"Could not reach {label}: {exc}") from exc
+        if response.status_code >= 400:
+            message = _http_error_message(label, response)
+            if response.status_code == 400 and "tool" in message.lower():
+                message += " (this model may not support tool calling; pick a model that does)"
+            raise LLMError(message)
+        try:
+            body = response.json()
+            msg = body["choices"][0]["message"]
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise LLMError(f"{label} returned an unexpected response") from exc
+        result.steps += 1
+        result.model = body.get("model") or config.model
+        usage = body.get("usage") or {}
+        result.input_tokens += int(usage.get("prompt_tokens") or 0)
+        result.output_tokens += int(usage.get("completion_tokens") or 0)
+        calls = msg.get("tool_calls") or []
+        if not calls:
+            result.text = (msg.get("content") or "").strip()
+            return
+        convo.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
+        for call in calls:
+            fn = call.get("function") or {}
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except ValueError:
+                output, is_error = {"error": "Arguments were not valid JSON; call the tool again."}, True
+            else:
+                output, is_error = call_tool(fn.get("name", ""), args)
+            convo.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": json.dumps(output, default=str)})
+
+
+def _agent_gemini(config, system, messages, tools, call_tool, max_steps, max_tokens, result) -> None:
+    label = PROVIDERS["gemini"]["label"]
+    url = f"{(config.base_url or '').rstrip('/')}/models/{config.model}:generateContent"
+    contents: list[dict[str, Any]] = [
+        {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]} for m in messages
+    ]
+    declarations = [{"name": t["name"], "description": t["description"], "parameters": t["parameters"]} for t in tools]
+    for _ in range(max_steps):
+        payload = {
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": contents,
+            "tools": [{"functionDeclarations": declarations}],
+            "generationConfig": {"maxOutputTokens": max_tokens},
+        }
+        try:
+            response = httpx.post(
+                url,
+                json=payload,
+                headers={"Content-Type": "application/json", "x-goog-api-key": config.api_key or ""},
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+        except httpx.HTTPError as exc:
+            raise LLMError(f"Could not reach {label}: {exc}") from exc
+        if response.status_code >= 400:
+            raise LLMError(_http_error_message(label, response))
+        try:
+            body = response.json()
+            content = body["candidates"][0]["content"]
+            parts = content.get("parts") or []
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise LLMError(f"{label} returned no content (it may have been blocked by safety filters)") from exc
+        result.steps += 1
+        usage = body.get("usageMetadata") or {}
+        result.input_tokens += int(usage.get("promptTokenCount") or 0)
+        result.output_tokens += int(usage.get("candidatesTokenCount") or 0)
+        calls = [p["functionCall"] for p in parts if "functionCall" in p]
+        if not calls:
+            result.text = "".join(p.get("text", "") for p in parts).strip()
+            return
+        contents.append({"role": "model", "parts": parts})
+        responses = []
+        for call in calls:
+            output, is_error = call_tool(call.get("name", ""), call.get("args") or {})
+            responses.append({"functionResponse": {"name": call.get("name", ""), "response": {"result": output, "is_error": is_error}}})
+        contents.append({"role": "user", "parts": responses})

@@ -209,6 +209,18 @@ CREATE TABLE IF NOT EXISTS google_accounts (
     last_error TEXT
 );
 
+CREATE TABLE IF NOT EXISTS whatsapp_settings (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    token_enc TEXT,
+    from_number TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL,
+    last_tested_at TEXT,
+    last_test_ok INTEGER,
+    last_test_message TEXT
+);
+
 CREATE TABLE IF NOT EXISTS oauth_states (
     state TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -221,6 +233,12 @@ CREATE TABLE IF NOT EXISTS oauth_states (
 ADDED_COLUMNS = (
     ("chat_messages", "seq", "INTEGER NOT NULL DEFAULT 0"),
     ("proposals", "payload", "TEXT"),
+    ("deals", "contact_phone", "TEXT NOT NULL DEFAULT ''"),
+    ("users", "sandbox_enabled", "INTEGER NOT NULL DEFAULT 0"),
+    ("users", "sandbox_emails", "TEXT NOT NULL DEFAULT ''"),
+    ("users", "sandbox_phones", "TEXT NOT NULL DEFAULT ''"),
+    ("chat_messages", "meta", "TEXT"),
+    ("receipts", "delivery_status", "TEXT"),
 )
 
 USER_PUBLIC_FIELDS = (
@@ -237,6 +255,9 @@ USER_PUBLIC_FIELDS = (
     "active_llm_provider",
     "kill_switch_active",
     "kill_switch_reason",
+    "sandbox_enabled",
+    "sandbox_emails",
+    "sandbox_phones",
     "created_at",
 )
 
@@ -249,6 +270,9 @@ PROFILE_EDITABLE_FIELDS = {
     "working_hours",
     "max_discount_pct",
     "quiet_days_threshold",
+    "sandbox_enabled",
+    "sandbox_emails",
+    "sandbox_phones",
 }
 
 DEAL_EDITABLE_FIELDS = {
@@ -256,6 +280,7 @@ DEAL_EDITABLE_FIELDS = {
     "title",
     "contact_name",
     "contact_email",
+    "contact_phone",
     "stage",
     "value_inr",
     "notes",
@@ -459,6 +484,7 @@ class AppStore:
     def _public_user(row: dict[str, Any]) -> dict[str, Any]:
         user = {k: row[k] for k in USER_PUBLIC_FIELDS}
         user["kill_switch_active"] = bool(user["kill_switch_active"])
+        user["sandbox_enabled"] = bool(user["sandbox_enabled"])
         return user
 
     def create_user(
@@ -508,6 +534,8 @@ class AppStore:
 
     def update_user(self, user_id: str, updates: dict[str, Any]) -> dict[str, Any]:
         fields = {k: v for k, v in updates.items() if k in PROFILE_EDITABLE_FIELDS}
+        if "sandbox_enabled" in fields:
+            fields["sandbox_enabled"] = 1 if fields["sandbox_enabled"] else 0
         if fields:
             assignments = ", ".join(f"{k} = ?" for k in fields)
             self._exec(
@@ -550,6 +578,10 @@ class AppStore:
 
     def delete_session(self, token: str) -> None:
         self._exec("DELETE FROM sessions WHERE token_hash = ?", (_hash_token(token),))
+
+    def delete_user(self, user_id: str) -> bool:
+        """Delete an account; every user-owned row goes with it (ON DELETE CASCADE)."""
+        return self._exec("DELETE FROM users WHERE id = ?", (user_id,)) > 0
 
     # ------------------------------------------------------------------
     # API keys (LLM providers)
@@ -717,9 +749,9 @@ class AppStore:
         deal_id = f"D-{uuid4().hex[:8].upper()}"
         now = iso(utcnow())
         self._exec(
-            """INSERT INTO deals (id, user_id, company, title, contact_name, contact_email, stage,
-                 value_inr, notes, do_not_contact, last_contact_at, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO deals (id, user_id, company, title, contact_name, contact_email, contact_phone,
+                 stage, value_inr, notes, do_not_contact, last_contact_at, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 deal_id,
                 user_id,
@@ -727,6 +759,7 @@ class AppStore:
                 data["title"],
                 data["contact_name"],
                 data.get("contact_email", ""),
+                data.get("contact_phone", "") or "",
                 data["stage"],
                 int(data.get("value_inr", 0)),
                 data.get("notes", ""),
@@ -863,8 +896,8 @@ class AppStore:
         self._exec(
             """INSERT INTO receipts (receipt_id, user_id, action_ref, action_kind, status,
                  recipient_email, subject, rendered_hash, external_id, detail, guards_checked,
-                 timeline, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 timeline, created_at, delivery_status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 receipt_id,
                 user_id,
@@ -879,6 +912,7 @@ class AppStore:
                 json.dumps(data.get("guards_checked", [])),
                 json.dumps(data.get("timeline", [])),
                 iso(utcnow()),
+                data.get("delivery_status"),
             ),
         )
         receipt = self.get_receipt(user_id, receipt_id)
@@ -892,6 +926,16 @@ class AppStore:
             (user_id, ref_or_id, ref_or_id),
         )
         return self._receipt_out(row) if row else None
+
+    def update_receipt_delivery(self, user_id: str, receipt_id: str, delivery_status: str, event: str) -> None:
+        receipt = self.get_receipt(user_id, receipt_id)
+        if receipt is None:
+            return
+        timeline = [*receipt["timeline"], {"timestamp": iso(utcnow()), "event": event}]
+        self._exec(
+            "UPDATE receipts SET delivery_status = ?, timeline = ? WHERE user_id = ? AND receipt_id = ?",
+            (delivery_status, json.dumps(timeline), user_id, receipt_id),
+        )
 
     def list_receipts(self, user_id: str) -> list[dict[str, Any]]:
         rows = self._query(
@@ -988,6 +1032,7 @@ class AppStore:
         content: str,
         provider: str | None = None,
         model: str | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         msg_id = f"msg_{uuid4().hex[:12]}"
         now = iso(utcnow())
@@ -997,9 +1042,12 @@ class AppStore:
             )
             self._exec(
                 """INSERT INTO chat_messages
-                     (id, session_id, user_id, role, content, provider, model, seq, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (msg_id, session_id, user_id, role, content, provider, model, int(last["seq"]) + 1, now),
+                     (id, session_id, user_id, role, content, provider, model, seq, created_at, meta)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    msg_id, session_id, user_id, role, content, provider, model,
+                    int(last["seq"]) + 1, now, json.dumps(meta) if meta else None,
+                ),
             )
         self._exec(
             "UPDATE chat_sessions SET updated_at = ? WHERE user_id = ? AND id = ?",
@@ -1012,13 +1060,66 @@ class AppStore:
             "provider": provider,
             "model": model,
             "created_at": now,
+            "meta": meta,
         }
 
     def list_chat_messages(self, user_id: str, session_id: str) -> list[dict[str, Any]]:
-        return self._query(
-            """SELECT id, role, content, provider, model, created_at FROM chat_messages
+        rows = self._query(
+            """SELECT id, role, content, provider, model, created_at, meta FROM chat_messages
                WHERE user_id = ? AND session_id = ? ORDER BY seq, created_at""",
             (user_id, session_id),
+        )
+        for row in rows:
+            row["meta"] = json.loads(row["meta"]) if row.get("meta") else None
+        return rows
+
+    # ------------------------------------------------------------------
+    # WhatsApp (Twilio or Meta Cloud API credentials per user)
+    # ------------------------------------------------------------------
+    def get_whatsapp_settings(self, user_id: str, *, include_secret: bool = False) -> dict[str, Any] | None:
+        row = self._one("SELECT * FROM whatsapp_settings WHERE user_id = ?", (user_id,))
+        if row is None:
+            return None
+        token = self._decrypt(row["token_enc"])
+        data = {
+            "provider": row["provider"],
+            "account_id": row["account_id"],
+            "from_number": row["from_number"],
+            "has_token": bool(token),
+            "masked_token": mask_secret(token),
+            "updated_at": row["updated_at"],
+            "last_tested_at": row["last_tested_at"],
+            "last_test_ok": None if row["last_test_ok"] is None else bool(row["last_test_ok"]),
+            "last_test_message": row["last_test_message"],
+        }
+        if include_secret:
+            data["token"] = token
+        return data
+
+    def upsert_whatsapp_settings(
+        self, user_id: str, *, provider: str, account_id: str, token: str | None, from_number: str
+    ) -> None:
+        existing = self._one("SELECT token_enc FROM whatsapp_settings WHERE user_id = ?", (user_id,))
+        enc = self._encrypt(token) if token else (existing or {}).get("token_enc")
+        self._exec(
+            """INSERT INTO whatsapp_settings (user_id, provider, account_id, token_enc, from_number, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET
+                 provider = excluded.provider, account_id = excluded.account_id,
+                 token_enc = excluded.token_enc, from_number = excluded.from_number,
+                 updated_at = excluded.updated_at,
+                 last_tested_at = NULL, last_test_ok = NULL, last_test_message = NULL""",
+            (user_id, provider, account_id, enc, from_number, iso(utcnow())),
+        )
+
+    def delete_whatsapp_settings(self, user_id: str) -> bool:
+        return self._exec("DELETE FROM whatsapp_settings WHERE user_id = ?", (user_id,)) > 0
+
+    def record_whatsapp_test(self, user_id: str, ok: bool, message: str) -> None:
+        self._exec(
+            """UPDATE whatsapp_settings SET last_tested_at = ?, last_test_ok = ?, last_test_message = ?
+               WHERE user_id = ?""",
+            (iso(utcnow()), 1 if ok else 0, message[:500], user_id),
         )
 
     # ------------------------------------------------------------------
