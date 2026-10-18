@@ -1,96 +1,80 @@
-/**
- * Tests for login flow: form submission, error handling, session storage.
- */
-
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LoginPage } from '../pages/LoginPage'
+import { mockFetch, TEST_USER } from './fetchMock'
 
-describe('Login Flow', () => {
-  beforeEach(() => {
-    sessionStorage.clear()
+afterEach(() => vi.unstubAllGlobals())
+
+async function fillRegistration(confirm = 'supersecret') {
+  await userEvent.click(screen.getByRole('tab', { name: 'Create account' }))
+  await userEvent.type(screen.getByLabelText('Full name'), 'Jay Founder')
+  await userEvent.type(screen.getByLabelText(/Company/), 'Jay Labs')
+  await userEvent.type(screen.getByLabelText('Email'), 'jay@example.com')
+  await userEvent.type(screen.getByLabelText('Password'), 'supersecret')
+  await userEvent.type(screen.getByLabelText('Confirm password'), confirm)
+  await userEvent.click(screen.getByRole('button', { name: 'Create account' }))
+}
+
+describe('LoginPage', () => {
+  it('signs in with email and password', async () => {
+    const { calls } = mockFetch({
+      'POST /auth/login': () => [200, { session_id: 'tok_1', user: TEST_USER }],
+    })
+    const onSuccess = vi.fn()
+    render(<LoginPage onLoginSuccess={onSuccess} />)
+
+    await userEvent.type(screen.getByLabelText('Email'), 'jay@example.com')
+    await userEvent.type(screen.getByLabelText('Password'), 'password123')
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith({ session_id: 'tok_1', user: TEST_USER }))
+    expect(calls[0].body).toEqual({ email: 'jay@example.com', password: 'password123' })
   })
 
-  it('renders login form', () => {
-    const onLoginSuccess = vi.fn()
-    render(<LoginPage onLoginSuccess={onLoginSuccess} />)
-
-    expect(screen.getByText('Chief of Staff')).toBeInTheDocument()
-    expect(screen.getByLabelText(/Email/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Password/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Sign in/i })).toBeInTheDocument()
+  it('shows an error for invalid credentials', async () => {
+    mockFetch({ 'POST /auth/login': () => [401, { detail: 'Invalid email or password' }] })
+    render(<LoginPage onLoginSuccess={vi.fn()} />)
+    await userEvent.type(screen.getByLabelText('Email'), 'jay@example.com')
+    await userEvent.type(screen.getByLabelText('Password'), 'wrong-pass')
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid email or password')
   })
 
-  it('submits login form', async () => {
-    const onLoginSuccess = vi.fn()
-    render(<LoginPage onLoginSuccess={onLoginSuccess} />)
+  it('does not offer demo credentials', () => {
+    render(<LoginPage onLoginSuccess={vi.fn()} />)
+    expect(screen.queryByText(/demo/i)).not.toBeInTheDocument()
+  })
 
-    const emailInput = screen.getByLabelText(/Email/i)
-    const passwordInput = screen.getByLabelText(/Password/i)
-    const submitButton = screen.getByRole('button', { name: /Sign in/i })
+  it('registers a new account', async () => {
+    const { calls } = mockFetch({
+      'POST /auth/register': () => [201, { session_id: 'tok_2', user: TEST_USER }],
+    })
+    const onSuccess = vi.fn()
+    render(<LoginPage onLoginSuccess={onSuccess} />)
+    await fillRegistration()
 
-    await userEvent.type(emailInput, 'test@example.com')
-    await userEvent.type(passwordInput, 'password123')
-    await userEvent.click(submitButton)
-
-    await waitFor(() => {
-      expect(onLoginSuccess).toHaveBeenCalled()
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled())
+    expect(calls[0].body).toEqual({
+      name: 'Jay Founder',
+      email: 'jay@example.com',
+      password: 'supersecret',
+      business_name: 'Jay Labs',
     })
   })
 
-  it('displays validation error on failed login', async () => {
-    const onLoginSuccess = vi.fn()
-    render(<LoginPage onLoginSuccess={onLoginSuccess} />)
-
-    const emailInput = screen.getByLabelText(/Email/i)
-    const passwordInput = screen.getByLabelText(/Password/i)
-    const submitButton = screen.getByRole('button', { name: /Sign in/i })
-
-    await userEvent.type(emailInput, 'test@example.com')
-    await userEvent.type(passwordInput, 'short') // Too short
-    await userEvent.click(submitButton)
-
-    await waitFor(() => {
-      expect(screen.getByText(/Invalid email or password/i)).toBeInTheDocument()
-    })
-
-    expect(onLoginSuccess).not.toHaveBeenCalled()
+  it('validates password confirmation before calling the API', async () => {
+    const { fn } = mockFetch({})
+    render(<LoginPage onLoginSuccess={vi.fn()} />)
+    await fillRegistration('different1')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Passwords do not match')
+    expect(fn).not.toHaveBeenCalled()
   })
 
-  it('disables button during submission', async () => {
-    const onLoginSuccess = vi.fn()
-    render(<LoginPage onLoginSuccess={onLoginSuccess} />)
-
-    const emailInput = screen.getByLabelText(/Email/i)
-    const passwordInput = screen.getByLabelText(/Password/i)
-    const submitButton = screen.getByRole('button', { name: /Sign in/i })
-
-    await userEvent.type(emailInput, 'test@example.com')
-    await userEvent.type(passwordInput, 'password123')
-    await userEvent.click(submitButton)
-
-    expect(submitButton).toBeDisabled()
-
-    await waitFor(() => {
-      expect(submitButton).not.toBeDisabled()
-    })
-  })
-
-  it('stores session in sessionStorage', async () => {
-    const onLoginSuccess = vi.fn()
-    render(<LoginPage onLoginSuccess={onLoginSuccess} />)
-
-    const emailInput = screen.getByLabelText(/Email/i)
-    const passwordInput = screen.getByLabelText(/Password/i)
-    const submitButton = screen.getByRole('button', { name: /Sign in/i })
-
-    await userEvent.type(emailInput, 'test@example.com')
-    await userEvent.type(passwordInput, 'password123')
-    await userEvent.click(submitButton)
-
-    await waitFor(() => {
-      expect(sessionStorage.getItem('session_id')).toBeDefined()
-    })
+  it('reports duplicate registrations', async () => {
+    mockFetch({ 'POST /auth/register': () => [409, { detail: 'exists' }] })
+    render(<LoginPage onLoginSuccess={vi.fn()} />)
+    await fillRegistration()
+    expect(await screen.findByRole('alert')).toHaveTextContent('already exists')
   })
 })

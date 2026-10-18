@@ -1,40 +1,67 @@
 /**
- * Login page: form that posts to /auth/login (mocked or live).
- * Session stored in sessionStorage (in-memory for session, survives tab reload).
+ * Auth page: sign in and registration, styled with the dashboard's emerald theme.
  */
 
 import React, { useState } from 'react'
-import { apiCall, setSession, APIClientError } from '../api/client'
-import type { LoginRequest, LoginResponse } from '../api/types'
+import { apiCall, APIClientError } from '../api/client'
+import type { LoginRequest, LoginResponse, RegisterRequest } from '../api/types'
+import { ApprovalIcon, KeyIcon, LogoStar, MailIcon, ShieldIcon } from '../components/Icons'
 
 export interface LoginPageProps {
   onLoginSuccess: (response: LoginResponse) => void
 }
 
+type Mode = 'login' | 'register'
+
+const FEATURES = [
+  { icon: <ApprovalIcon size={18} />, title: 'Hash-bound approvals', text: 'Every outbound email is drafted, guard-checked and sent only after you approve the exact text.' },
+  { icon: <ShieldIcon size={18} />, title: '15 deterministic guards', text: 'Discount ceilings, opt-outs, currency and sensitive-data checks run before anything leaves.' },
+  { icon: <KeyIcon size={18} />, title: 'Your own AI keys', text: 'Bring your Anthropic, OpenAI, Gemini, Groq or OpenRouter key. See every token you spend.' },
+  { icon: <MailIcon size={18} />, title: 'Sends from your inbox', text: 'Connect your own SMTP account so follow-ups go out from your address.' },
+]
+
 export function LoginPage({ onLoginSuccess }: LoginPageProps): JSX.Element {
+  const [mode, setMode] = useState<Mode>('login')
+  const [name, setName] = useState('')
+  const [businessName, setBusinessName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+
+  const isRegistering = mode === 'register'
+  const canSubmit =
+    !isLoading && email.trim() !== '' && password !== '' && (!isRegistering || (name.trim() !== '' && confirmPassword !== ''))
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+    if (isRegistering) {
+      if (password.length < 8) {
+        setError('Password must be at least 8 characters')
+        return
+      }
+      if (password !== confirmPassword) {
+        setError('Passwords do not match')
+        return
+      }
+    }
     setIsLoading(true)
-
     try {
-      const response = await apiCall<LoginResponse>('/auth/login', {
+      const response = await apiCall<LoginResponse>(isRegistering ? '/auth/register' : '/auth/login', {
         method: 'POST',
-        body: { email, password } as LoginRequest,
+        body: isRegistering
+          ? ({ name: name.trim(), email: email.trim(), password, business_name: businessName.trim() } satisfies RegisterRequest)
+          : ({ email: email.trim(), password } satisfies LoginRequest),
       })
-
-      setSession(response.session_id)
       onLoginSuccess(response)
     } catch (err) {
       if (err instanceof APIClientError) {
-        setError(
-          err.code === 422 ? 'Invalid email or password' : `Error: ${err.message}`
-        )
+        if (err.code === 401) setError('Invalid email or password')
+        else if (err.code === 409) setError('An account with this email already exists. Sign in instead.')
+        else setError(err.message)
       } else {
         setError('An unexpected error occurred')
       }
@@ -43,208 +70,217 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps): JSX.Element {
     }
   }
 
-  const handleFillDemo = () => {
-    setEmail('meera@agency.in')
-    setPassword('password123')
+  const switchMode = (next: Mode) => {
+    setMode(next)
     setError(null)
+    setPassword('')
+    setConfirmPassword('')
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        minHeight: '100vh',
-        backgroundColor: '#07090C',
-        color: '#F1F5F9',
-        padding: '1.5rem',
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '410px',
-          padding: '2.25rem',
-          backgroundColor: '#10141C',
-          borderRadius: '1.25rem',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          boxShadow: '0 24px 48px -12px rgba(0, 0, 0, 0.7), 0 0 24px -8px rgba(0, 255, 135, 0.15)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+    <div className="cos-auth-shell">
+      <section className="cos-auth-brand">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div
             style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '14px',
+              width: '44px',
+              height: '44px',
+              borderRadius: '16px',
               backgroundColor: '#091510',
-              border: '1px solid rgba(16, 185, 129, 0.45)',
-              color: '#00FF87',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
+              color: 'var(--emerald-glow)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 0 14px -2px rgba(0, 255, 135, 0.35)',
             }}
+            className="glow-emerald-sm"
           >
-            <svg style={{ width: '22px', height: '22px' }} viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 0L14.6 9.4L24 12L14.6 14.6L12 24L9.4 14.6L0 12L9.4 9.4L12 0Z" />
-            </svg>
+            <LogoStar size={24} />
           </div>
           <div>
-            <h1 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 800, color: '#FFFFFF' }}>
-              Chief of Staff
-            </h1>
-            <div style={{ fontSize: '0.7rem', color: '#00FF87', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+            <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#FFFFFF' }}>Chief of Staff</div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--emerald-glow)', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
               Plan · Build · Execute
             </div>
           </div>
         </div>
 
-        <p style={{ margin: '0 0 1.75rem 0', color: '#94A3B8', fontSize: '0.85rem', lineHeight: 1.5 }}>
-          Sign in to your account to manage deals, review hash-bound approvals, and command your autonomous sales operations.
-        </p>
-
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label
-              htmlFor="email"
-              style={{
-                display: 'block',
-                marginBottom: '0.45rem',
-                fontSize: '0.8125rem',
-                fontWeight: 600,
-                color: '#CBD5E1',
-              }}
-            >
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={isLoading}
-              placeholder="name@example.com"
-              style={{
-                width: '100%',
-                padding: '0.75rem 0.9rem',
-                backgroundColor: '#080B0F',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                borderRadius: '0.625rem',
-                fontSize: '0.9375rem',
-                color: '#FFFFFF',
-                boxSizing: 'border-box',
-                outline: 'none',
-              }}
-            />
+        <div style={{ maxWidth: '460px' }}>
+          <h2 style={{ fontSize: '2rem', lineHeight: 1.2, fontWeight: 800, color: '#FFFFFF', marginBottom: '0.75rem' }}>
+            Your AI chief of staff for <span style={{ color: 'var(--emerald-glow)' }}>sales follow-ups</span>.
+          </h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', lineHeight: 1.6, marginBottom: '2rem' }}>
+            Track your pipeline, catch deals going quiet, and send grounded follow-ups. Nothing goes out without your approval.
+          </p>
+          <div style={{ display: 'grid', gap: '1rem' }}>
+            {FEATURES.map((f) => (
+              <div key={f.title} style={{ display: 'flex', gap: '0.85rem', alignItems: 'flex-start' }}>
+                <div
+                  style={{
+                    flexShrink: 0,
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '10px',
+                    backgroundColor: 'var(--emerald-tint)',
+                    border: '1px solid var(--border-emerald)',
+                    color: 'var(--emerald-glow)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {f.icon}
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#FFFFFF' }}>{f.title}</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>{f.text}</div>
+                </div>
+              </div>
+            ))}
           </div>
+        </div>
 
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label
-              htmlFor="password"
-              style={{
-                display: 'block',
-                marginBottom: '0.45rem',
-                fontSize: '0.8125rem',
-                fontWeight: 600,
-                color: '#CBD5E1',
-              }}
-            >
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={isLoading}
-              placeholder="••••••••"
-              style={{
-                width: '100%',
-                padding: '0.75rem 0.9rem',
-                backgroundColor: '#080B0F',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                borderRadius: '0.625rem',
-                fontSize: '0.9375rem',
-                color: '#FFFFFF',
-                boxSizing: 'border-box',
-                outline: 'none',
-              }}
-            />
-          </div>
+        <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+          Passwords are salted and hashed (PBKDF2). API keys are encrypted at rest.
+        </div>
+      </section>
 
-          {error && (
-            <div
-              role="alert"
-              style={{
-                marginBottom: '1rem',
-                padding: '0.75rem',
-                backgroundColor: 'rgba(244, 63, 94, 0.12)',
-                border: '1px solid rgba(244, 63, 94, 0.4)',
-                borderRadius: '0.5rem',
-                color: '#FDA4AF',
-                fontSize: '0.8125rem',
-              }}
-            >
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={isLoading || !email || !password}
-            style={{
-              width: '100%',
-              padding: '0.8rem',
-              backgroundColor: isLoading || !email || !password ? '#1E293B' : '#10B981',
-              color: isLoading || !email || !password ? '#64748B' : '#050709',
-              border: 'none',
-              borderRadius: '0.625rem',
-              fontSize: '0.9375rem',
-              fontWeight: 700,
-              cursor: isLoading || !email || !password ? 'not-allowed' : 'pointer',
-              transition: 'all 0.18s ease',
-            }}
-          >
-            {isLoading ? 'Signing in...' : 'Sign in'}
-          </button>
-        </form>
-
+      <section className="cos-auth-form-wrap">
         <div
           style={{
-            marginTop: '1.25rem',
-            paddingTop: '1rem',
-            borderTop: '1px solid rgba(255, 255, 255, 0.07)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '0.5rem',
-            fontSize: '0.75rem',
-            color: '#94A3B8',
-            textAlign: 'center',
+            width: '100%',
+            maxWidth: '420px',
+            padding: '2.25rem',
+            backgroundColor: 'var(--bg-surface)',
+            borderRadius: '1.25rem',
+            border: '1px solid var(--border-hairline)',
+            boxShadow: '0 24px 48px -12px rgba(0, 0, 0, 0.7), 0 0 24px -8px rgba(0, 255, 135, 0.15)',
           }}
         >
-          <div>Demo credentials: test@example.com / password123</div>
-          <button
-            type="button"
-            onClick={handleFillDemo}
+          <div
+            role="tablist"
             style={{
-              background: 'rgba(0, 255, 135, 0.08)',
-              border: '1px solid rgba(0, 255, 135, 0.25)',
-              color: '#00FF87',
-              padding: '0.3rem 0.75rem',
-              borderRadius: '9999px',
-              fontSize: '0.72rem',
-              fontWeight: 600,
-              cursor: 'pointer',
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              padding: '4px',
+              backgroundColor: 'var(--bg-console)',
+              border: '1px solid var(--border-hairline)',
+              borderRadius: '12px',
+              marginBottom: '1.5rem',
             }}
           >
-            ⚡ Quick Fill Founder Credentials
-          </button>
+            {(['login', 'register'] as Mode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={mode === m}
+                onClick={() => switchMode(m)}
+                disabled={isLoading}
+                style={{
+                  padding: '0.55rem',
+                  borderRadius: '9px',
+                  border: mode === m ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid transparent',
+                  backgroundColor: mode === m ? '#0C1A14' : 'transparent',
+                  color: mode === m ? 'var(--emerald-glow)' : 'var(--text-muted)',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {m === 'login' ? 'Sign in' : 'Create account'}
+              </button>
+            ))}
+          </div>
+
+          <h1 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#FFFFFF', marginBottom: '0.35rem' }}>
+            {isRegistering ? 'Create your workspace' : 'Welcome back'}
+          </h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.84rem', lineHeight: 1.5, marginBottom: '1.5rem' }}>
+            {isRegistering
+              ? 'Start with an empty, private workspace. Add your deals and your own AI key after signing up.'
+              : 'Sign in to review approvals, manage deals and talk to your chief of staff.'}
+          </p>
+
+          <form onSubmit={handleSubmit} noValidate>
+            {isRegistering && (
+              <>
+                <div style={{ marginBottom: '0.9rem' }}>
+                  <label htmlFor="name" className="cos-label">Full name</label>
+                  <input id="name" className="cos-input" type="text" value={name} onChange={(e) => setName(e.target.value)} disabled={isLoading} placeholder="Your name" autoComplete="name" required />
+                </div>
+                <div style={{ marginBottom: '0.9rem' }}>
+                  <label htmlFor="business" className="cos-label">
+                    Company <span className="cos-dim" style={{ fontWeight: 400 }}>(optional)</span>
+                  </label>
+                  <input id="business" className="cos-input" type="text" value={businessName} onChange={(e) => setBusinessName(e.target.value)} disabled={isLoading} placeholder="Your company" autoComplete="organization" />
+                </div>
+              </>
+            )}
+
+            <div style={{ marginBottom: '0.9rem' }}>
+              <label htmlFor="email" className="cos-label">Email</label>
+              <input id="email" className="cos-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={isLoading} placeholder="name@company.com" autoComplete="email" required />
+            </div>
+
+            <div style={{ marginBottom: isRegistering ? '0.9rem' : '1.4rem' }}>
+              <label htmlFor="password" className="cos-label">Password</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  id="password"
+                  className="cos-input"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={isLoading}
+                  placeholder={isRegistering ? 'At least 8 characters' : '••••••••'}
+                  autoComplete={isRegistering ? 'new-password' : 'current-password'}
+                  required
+                  style={{ paddingRight: '3.5rem' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  style={{ position: 'absolute', right: '0.6rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer' }}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
+              </div>
+            </div>
+
+            {isRegistering && (
+              <div style={{ marginBottom: '1.4rem' }}>
+                <label htmlFor="confirm-password" className="cos-label">Confirm password</label>
+                <input id="confirm-password" className="cos-input" type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} disabled={isLoading} placeholder="Re-enter your password" autoComplete="new-password" required />
+              </div>
+            )}
+
+            {error && (
+              <div role="alert" className="cos-alert cos-alert-error" style={{ marginBottom: '1rem' }}>
+                {error}
+              </div>
+            )}
+
+            <button type="submit" className="cos-btn cos-btn-primary" disabled={!canSubmit} style={{ width: '100%', padding: '0.8rem', fontSize: '0.92rem' }}>
+              {isLoading ? (isRegistering ? 'Creating account...' : 'Signing in...') : isRegistering ? 'Create account' : 'Sign in'}
+            </button>
+          </form>
+
+          <div style={{ marginTop: '1.1rem', textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            {isRegistering ? 'Already have an account?' : "Don't have an account?"}{' '}
+            <button
+              type="button"
+              onClick={() => switchMode(isRegistering ? 'login' : 'register')}
+              disabled={isLoading}
+              style={{ padding: 0, background: 'none', border: 'none', color: 'var(--emerald-glow)', font: 'inherit', fontWeight: 600, cursor: 'pointer' }}
+            >
+              {isRegistering ? 'Sign in' : 'Create one'}
+            </button>
+          </div>
         </div>
-      </div>
+      </section>
     </div>
   )
 }

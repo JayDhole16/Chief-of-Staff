@@ -1,48 +1,60 @@
 /**
- * Main app: router between login and dashboard, session management.
+ * Main app: validates the stored session with the backend, then routes between
+ * the auth page and the dashboard.
  */
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { OfflineBanner } from './components/ErrorBoundary'
-import { clearSession, hasSession } from './api/client'
-import type { LoginResponse } from './api/types'
+import { apiCall, clearSession, hasSession, SESSION_EXPIRED_EVENT, setSession } from './api/client'
+import type { LoginResponse, User } from './api/types'
 
 export function App(): JSX.Element {
-  const [session, setSession] = useState<LoginResponse | null>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [isChecking, setIsChecking] = useState(true)
 
-  // Restore session from sessionStorage on mount
   useEffect(() => {
-    if (hasSession()) {
-      const stored = sessionStorage.getItem('session_data')
-      if (stored) {
-        try {
-          setSession(JSON.parse(stored))
-        } catch {
-          clearSession()
-        }
-      }
+    let cancelled = false
+    if (!hasSession()) {
+      setIsChecking(false)
+      return
     }
-    setIsChecking(false)
+    apiCall<LoginResponse>('/session')
+      .then((res) => {
+        if (!cancelled) setUser(res.user)
+      })
+      .catch(() => {
+        clearSession()
+      })
+      .finally(() => {
+        if (!cancelled) setIsChecking(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
-  const handleLoginSuccess = (response: LoginResponse) => {
-    sessionStorage.setItem('session_data', JSON.stringify(response))
-    setSession(response)
-  }
+  useEffect(() => {
+    const onExpired = () => setUser(null)
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired)
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired)
+  }, [])
 
-  const handleUpdateSession = (updated: LoginResponse) => {
-    sessionStorage.setItem('session_data', JSON.stringify(updated))
-    setSession(updated)
-  }
+  const handleAuthSuccess = useCallback((response: LoginResponse) => {
+    setSession(response.session_id)
+    setUser(response.user)
+  }, [])
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('session_data')
+  const handleLogout = useCallback(async () => {
+    try {
+      await apiCall('/auth/logout', { method: 'POST' })
+    } catch {
+      // session may already be gone; sign out locally regardless
+    }
     clearSession()
-    setSession(null)
-  }
+    setUser(null)
+  }, [])
 
   if (isChecking) {
     return (
@@ -52,12 +64,10 @@ export function App(): JSX.Element {
           justifyContent: 'center',
           alignItems: 'center',
           height: '100vh',
-          backgroundColor: 'var(--bg-void, #07090C)',
+          backgroundColor: 'var(--bg-void)',
         }}
       >
-        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted, #94A3B8)' }}>
-          Initializing Chief of Staff...
-        </div>
+        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>Loading Chief of Staff...</div>
       </div>
     )
   }
@@ -65,14 +75,10 @@ export function App(): JSX.Element {
   return (
     <>
       <OfflineBanner />
-      {!session ? (
-        <LoginPage onLoginSuccess={handleLoginSuccess} />
+      {!user ? (
+        <LoginPage onLoginSuccess={handleAuthSuccess} />
       ) : (
-        <DashboardPage
-          session={session}
-          onLogout={handleLogout}
-          onUpdateSession={handleUpdateSession}
-        />
+        <DashboardPage user={user} onUserChange={setUser} onLogout={handleLogout} />
       )}
     </>
   )
