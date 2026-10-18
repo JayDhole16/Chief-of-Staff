@@ -129,7 +129,8 @@ CREATE TABLE IF NOT EXISTS proposals (
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL,
     decided_at TEXT,
-    receipt_id TEXT
+    receipt_id TEXT,
+    payload TEXT
 );
 
 CREATE TABLE IF NOT EXISTS receipts (
@@ -196,7 +197,31 @@ CREATE INDEX IF NOT EXISTS idx_proposals_user ON proposals(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_activity_user ON activity(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, seq);
 CREATE INDEX IF NOT EXISTS idx_usage_user ON llm_usage(user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS google_accounts (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    access_token_enc TEXT,
+    refresh_token_enc TEXT NOT NULL,
+    expires_at TEXT,
+    scopes TEXT NOT NULL DEFAULT '',
+    connected_at TEXT NOT NULL,
+    last_error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS oauth_states (
+    state TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_verifier TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
+
+# Columns added after first release: (table, column, definition), applied on startup.
+ADDED_COLUMNS = (
+    ("chat_messages", "seq", "INTEGER NOT NULL DEFAULT 0"),
+    ("proposals", "payload", "TEXT"),
+)
 
 USER_PUBLIC_FIELDS = (
     "id",
@@ -322,11 +347,14 @@ class AppStore:
                     self._conn.execute("SELECT pg_advisory_xact_lock(727274)")
                     for statement in filter(None, (part.strip() for part in ddl.split(";"))):
                         self._conn.execute(statement)
+                    for table, column, definition in ADDED_COLUMNS:
+                        self._conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}")
             else:
                 self._conn.executescript(ddl)
-                columns = {row[1] for row in self._conn.execute("PRAGMA table_info(chat_messages)")}
-                if "seq" not in columns:  # databases created before message ordering was added
-                    self._conn.execute("ALTER TABLE chat_messages ADD COLUMN seq INTEGER NOT NULL DEFAULT 0")
+                for table, column, definition in ADDED_COLUMNS:
+                    columns = {row[1] for row in self._conn.execute(f"PRAGMA table_info({table})")}
+                    if column not in columns:
+                        self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
                 self._conn.commit()
 
     def _load_encryption_key(self) -> bytes:
@@ -732,6 +760,7 @@ class AppStore:
         p.pop("user_id", None)
         for key in ("policy_reasons", "guards_checked", "facts_used"):
             p[key] = json.loads(p[key] or "[]")
+        p["payload"] = json.loads(p["payload"]) if p.get("payload") else None
         return p
 
     def create_proposal(self, user_id: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -740,8 +769,8 @@ class AppStore:
         self._exec(
             """INSERT INTO proposals (ref, user_id, deal_id, kind, deal_title, contact_name,
                  contact_email, subject, rendered_body, rendered_hash, policy_verdict,
-                 policy_reasons, guards_checked, facts_used, status, created_at, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 policy_reasons, guards_checked, facts_used, status, created_at, expires_at, payload)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 ref,
                 user_id,
@@ -760,6 +789,7 @@ class AppStore:
                 data.get("status", "pending"),
                 iso(now),
                 iso(now + timedelta(hours=48)),
+                json.dumps(data["payload"]) if data.get("payload") is not None else None,
             ),
         )
         proposal = self.get_proposal(user_id, ref)
@@ -986,6 +1016,80 @@ class AppStore:
                WHERE user_id = ? AND session_id = ? ORDER BY seq, created_at""",
             (user_id, session_id),
         )
+
+    # ------------------------------------------------------------------
+    # Google (OAuth tokens per user)
+    # ------------------------------------------------------------------
+    def create_oauth_state(self, user_id: str, state: str, code_verifier: str) -> None:
+        self._exec("DELETE FROM oauth_states WHERE created_at < ?", (iso(utcnow() - timedelta(minutes=15)),))
+        self._exec(
+            "INSERT INTO oauth_states (state, user_id, code_verifier, created_at) VALUES (?, ?, ?, ?)",
+            (state, user_id, self._encrypt(code_verifier), iso(utcnow())),
+        )
+
+    def consume_oauth_state(self, state: str) -> dict[str, Any] | None:
+        """Return and delete a pending OAuth state if it exists and is under 10 minutes old."""
+        with self._lock:
+            row = self._one("SELECT * FROM oauth_states WHERE state = ?", (state,))
+            if row is None:
+                return None
+            self._exec("DELETE FROM oauth_states WHERE state = ?", (state,))
+        if parse_iso(row["created_at"]) < utcnow() - timedelta(minutes=10):
+            return None
+        return {"user_id": row["user_id"], "code_verifier": self._decrypt(row["code_verifier"])}
+
+    def save_google_account(
+        self,
+        user_id: str,
+        *,
+        email: str,
+        access_token: str,
+        refresh_token: str | None,
+        expires_at: str,
+        scopes: str,
+    ) -> None:
+        existing = self._one("SELECT refresh_token_enc FROM google_accounts WHERE user_id = ?", (user_id,))
+        refresh_enc = self._encrypt(refresh_token) if refresh_token else (existing or {}).get("refresh_token_enc")
+        if not refresh_enc:
+            raise ValueError("Google did not return a refresh token")
+        self._exec(
+            """INSERT INTO google_accounts
+                 (user_id, email, access_token_enc, refresh_token_enc, expires_at, scopes, connected_at, last_error)
+               VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+               ON CONFLICT(user_id) DO UPDATE SET
+                 email = excluded.email, access_token_enc = excluded.access_token_enc,
+                 refresh_token_enc = excluded.refresh_token_enc, expires_at = excluded.expires_at,
+                 scopes = excluded.scopes, connected_at = excluded.connected_at, last_error = NULL""",
+            (user_id, email, self._encrypt(access_token), refresh_enc, expires_at, scopes, iso(utcnow())),
+        )
+
+    def get_google_account(self, user_id: str, *, include_tokens: bool = False) -> dict[str, Any] | None:
+        row = self._one("SELECT * FROM google_accounts WHERE user_id = ?", (user_id,))
+        if row is None:
+            return None
+        account = {
+            "email": row["email"],
+            "scopes": [s for s in (row["scopes"] or "").split() if s],
+            "connected_at": row["connected_at"],
+            "expires_at": row["expires_at"],
+            "last_error": row["last_error"],
+        }
+        if include_tokens:
+            account["access_token"] = self._decrypt(row["access_token_enc"])
+            account["refresh_token"] = self._decrypt(row["refresh_token_enc"])
+        return account
+
+    def update_google_access_token(self, user_id: str, access_token: str, expires_at: str) -> None:
+        self._exec(
+            "UPDATE google_accounts SET access_token_enc = ?, expires_at = ?, last_error = NULL WHERE user_id = ?",
+            (self._encrypt(access_token), expires_at, user_id),
+        )
+
+    def set_google_error(self, user_id: str, message: str | None) -> None:
+        self._exec("UPDATE google_accounts SET last_error = ? WHERE user_id = ?", (message, user_id))
+
+    def delete_google_account(self, user_id: str) -> bool:
+        return self._exec("DELETE FROM google_accounts WHERE user_id = ?", (user_id,)) > 0
 
     # ------------------------------------------------------------------
     # LLM usage
