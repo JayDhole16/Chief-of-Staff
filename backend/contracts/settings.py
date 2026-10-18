@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Literal
 
 import pydantic
+
 from backend.contracts import CompatBaseModel
 
 PYDANTIC_V2 = pydantic.__version__.startswith("2.")

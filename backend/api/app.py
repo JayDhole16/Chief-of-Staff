@@ -70,11 +70,6 @@ from backend.services.settings_store import (
     get_google_view,
     get_integrations_section,
     get_model_view,
-    load_settings,
-    record_evolus_test_result,
-    record_model_test_result,
-    update_evolus_settings,
-    update_model_settings,
 )
 from backend.services.sweep import (
     QuietSweepService,

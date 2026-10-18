@@ -22,13 +22,13 @@ Covers:
    - Store persistence across /api/dev/reset-demo.
 """
 
-from datetime import datetime, timezone
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-import pytest
 
 from backend.api.app import app, state
 from backend.contracts.settings import (
@@ -36,7 +36,6 @@ from backend.contracts.settings import (
     EvolusSettingsView,
     GoogleConnectionUpdate,
     GoogleSettingsView,
-    IntegrationName,
     IntegrationsSection,
     IntegrationTestResult,
     ModelConfigUpdate,
@@ -45,9 +44,6 @@ from backend.contracts.settings import (
 from backend.integrations import (
     Adapters,
     EvolusPort,
-    FakeEvolusClient,
-    FakeGoogleClient,
-    FakeModelClient,
     GooglePort,
     ModelPort,
     build_adapters,

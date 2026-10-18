@@ -5,8 +5,8 @@ Integrations package providing Ports and Adapters for external services.
 from dataclasses import dataclass
 
 from .evolus import AdapterTestResult, EvolusPort, FakeEvolusClient
-from .google import GooglePort, FakeGoogleClient
-from .model import ModelPort, FakeModelClient
+from .google import FakeGoogleClient, GooglePort
+from .model import FakeModelClient, ModelPort
 
 
 @dataclass
