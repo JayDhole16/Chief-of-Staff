@@ -1,22 +1,32 @@
 /**
  * Grounded chat with the founder's chief of staff, powered by the founder's own API key.
- * Conversations are persisted per user on the backend.
+ * The agent can look up contacts and calendar events and prepare emails, WhatsApp
+ * messages and calendar changes, which the user confirms on cards in the chat.
+ * Supports voice dictation into the input box. Conversations persist per user.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { apiCall, APIClientError, errorMessage } from '../api/client'
 import type { ChatMessage, ChatResponse, ChatSession } from '../api/types'
 import type { DashboardContext } from '../pages/DashboardPage'
-import { LogoStar, PlusIcon, SendIcon, TrashIcon } from '../components/Icons'
+import { LogoStar, MicIcon, PlusIcon, SendIcon, TrashIcon } from '../components/Icons'
+import { ActionCard } from '../components/ActionCard'
+import { useDictation } from '../hooks/useDictation'
 import { Markdown } from '../components/ui'
 import { timeAgo } from '../utils/formatters'
 
 const STARTER_PROMPTS = [
   'Which deals need a follow-up this week?',
-  'Summarise my pipeline by stage and value',
-  'What should I prioritise today?',
-  'Which deals are at risk of going cold?',
+  'Send a follow-up email to my quietest deal',
+  "What's on my calendar tomorrow?",
+  'Set a reminder for client check-in tomorrow at 3 PM',
 ]
+
+const AUTOSEND_KEY = 'cos.dictation.autosend'
+
+function joinText(base: string, addition: string): string {
+  return [base.trim(), addition.trim()].filter(Boolean).join(' ')
+}
 
 export function ChatView({ ctx }: { ctx: DashboardContext }): JSX.Element {
   const [sessions, setSessions] = useState<ChatSession[]>([])
@@ -28,6 +38,14 @@ export function ChatView({ ctx }: { ctx: DashboardContext }): JSX.Element {
   const [needsKey, setNeedsKey] = useState(!ctx.user.active_llm_provider)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const dictationBase = useRef('')
+  const [autoSend, setAutoSend] = useState(() => {
+    try {
+      return localStorage.getItem(AUTOSEND_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
 
   const loadSessions = useCallback(() => {
     apiCall<{ sessions: ChatSession[] }>('/chat/sessions')
@@ -85,7 +103,8 @@ export function ChatView({ ctx }: { ctx: DashboardContext }): JSX.Element {
     setMessages((prev) => [...prev, optimistic])
     try {
       const res = await apiCall<ChatResponse>('/chat', { method: 'POST', body: { message, session_id: activeId } })
-      setMessages((prev) => [...prev.filter((m) => m.id !== optimistic.id), res.user_message, res.reply])
+      setMessages((prev) => [...prev.filter((m) => m.id !== optimistic.id), res.user_message, { ...res.reply, actions: res.actions }])
+      if (res.actions.length > 0) ctx.refreshApprovals()
       if (res.session_id !== activeId) {
         setActiveId(res.session_id)
         loadSessions()
@@ -97,6 +116,30 @@ export function ChatView({ ctx }: { ctx: DashboardContext }): JSX.Element {
       setError(errorMessage(err))
     } finally {
       setSending(false)
+    }
+  }
+
+  const dictation = useDictation({
+    onTranscript: (text) => setInput(joinText(dictationBase.current, text)),
+    onStop: (finalText) => {
+      const full = joinText(dictationBase.current, finalText)
+      setInput(full)
+      if (autoSend && finalText.trim()) void send(full)
+      else inputRef.current?.focus()
+    },
+  })
+
+  const toggleDictation = () => {
+    if (!dictation.listening) dictationBase.current = input
+    dictation.toggle()
+  }
+
+  const changeAutoSend = (value: boolean) => {
+    setAutoSend(value)
+    try {
+      localStorage.setItem(AUTOSEND_KEY, value ? '1' : '0')
+    } catch {
+      // preference is only kept for this page
     }
   }
 
@@ -216,6 +259,26 @@ export function ChatView({ ctx }: { ctx: DashboardContext }): JSX.Element {
                   }}
                 >
                   {m.role === 'assistant' ? <Markdown text={m.content} /> : <div style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>}
+                  {m.role === 'assistant' && m.meta?.tool_calls && m.meta.tool_calls.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.55rem' }}>
+                      {m.meta.tool_calls.map((t, i) => (
+                        <span key={i} className={`cos-badge ${t.ok ? '' : 'cos-badge-red'}`} title={t.summary} style={{ textTransform: 'none' }}>
+                          {t.ok ? '✓' : '✗'} {t.name.replace(/_/g, ' ')}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {m.actions?.map((a) => (
+                    <ActionCard
+                      key={a.ref}
+                      proposal={a}
+                      onDecided={(message, ok) => {
+                        ctx.notify(message, ok ? 'ok' : 'error')
+                        ctx.refreshApprovals()
+                      }}
+                      onOpenApprovals={() => ctx.navigate('approvals')}
+                    />
+                  ))}
                   {m.role === 'assistant' && m.model && (
                     <div className="cos-dim" style={{ fontSize: '0.66rem', marginTop: '0.5rem' }}>
                       {m.provider} · {m.model}
@@ -243,14 +306,40 @@ export function ChatView({ ctx }: { ctx: DashboardContext }): JSX.Element {
           }}
           style={{ padding: '1rem 1.5rem 1.25rem', borderTop: '1px solid var(--border-hairline)', backgroundColor: 'var(--bg-console)' }}
         >
+          {dictation.error && (
+            <div className="cos-alert cos-alert-error" role="alert" style={{ maxWidth: '760px', margin: '0 auto 0.6rem', display: 'flex', justifyContent: 'space-between', gap: '0.75rem' }}>
+              <span>{dictation.error}</span>
+              <button type="button" onClick={dictation.clearError} aria-label="Dismiss" style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}>
+                ×
+              </button>
+            </div>
+          )}
           <div style={{ maxWidth: '760px', margin: '0 auto', display: 'flex', gap: '0.6rem', alignItems: 'flex-end' }}>
+            <button
+              type="button"
+              className={`cos-btn cos-btn-ghost${dictation.listening ? ' cos-mic-live' : ''}`}
+              onClick={toggleDictation}
+              disabled={sending || needsKey}
+              aria-pressed={dictation.listening}
+              aria-label={dictation.listening ? 'Stop dictation' : 'Start voice dictation'}
+              title={dictation.supported ? (dictation.listening ? 'Stop dictation' : 'Dictate (speak in English)') : 'Voice dictation needs Chrome, Edge or Safari'}
+              style={{ height: '46px', width: '46px', padding: 0, flexShrink: 0 }}
+            >
+              <MicIcon size={18} />
+            </button>
             <textarea
               ref={inputRef}
               className="cos-textarea"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder={needsKey ? 'Add an API key to start chatting' : 'Ask about your deals, approvals or priorities... (Enter to send)'}
+              placeholder={
+                needsKey
+                  ? 'Add an API key to start chatting'
+                  : dictation.listening
+                    ? 'Listening... speak now, click the mic to stop'
+                    : 'Ask, or tell me to email, WhatsApp or schedule... (Enter to send)'
+              }
               rows={1}
               aria-label="Message"
               style={{ minHeight: '46px', maxHeight: '180px' }}
@@ -260,6 +349,10 @@ export function ChatView({ ctx }: { ctx: DashboardContext }): JSX.Element {
               <SendIcon size={18} />
             </button>
           </div>
+          <label style={{ maxWidth: '760px', margin: '0.45rem auto 0', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.72rem', color: 'var(--text-dim)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={autoSend} onChange={(e) => changeAutoSend(e.target.checked)} />
+            Send automatically when I stop dictating
+          </label>
         </form>
       </section>
     </div>

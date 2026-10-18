@@ -343,3 +343,15 @@ body {
 .cos-md code { background: rgba(255,255,255,0.06); padding: 0.05rem 0.35rem; border-radius: 5px; font-size: 0.85em; }
 .cos-md strong { color: #FFFFFF; }
 .cos-md h1, .cos-md h2, .cos-md h3 { font-size: 0.95rem; margin: 0.6rem 0 0.4rem; color: #FFFFFF; }
+
+@keyframes micPulse {
+  0% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.55); }
+  70% { box-shadow: 0 0 0 10px rgba(244, 63, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
+}
+.cos-mic-live {
+  background-color: rgba(244, 63, 94, 0.18) !important;
+  border-color: rgba(244, 63, 94, 0.6) !important;
+  color: #FB7185 !important;
+  animation: micPulse 1.4s infinite;
+}

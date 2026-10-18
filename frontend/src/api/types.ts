@@ -32,6 +32,9 @@ export interface User {
   active_llm_provider: string | null
   kill_switch_active: boolean
   kill_switch_reason: string | null
+  sandbox_enabled: boolean
+  sandbox_emails: string
+  sandbox_phones: string
   created_at: string
 }
 
@@ -51,6 +54,9 @@ export type ProfileUpdate = Partial<
     | 'working_hours'
     | 'max_discount_pct'
     | 'quiet_days_threshold'
+    | 'sandbox_enabled'
+    | 'sandbox_emails'
+    | 'sandbox_phones'
   >
 >
 
@@ -63,6 +69,7 @@ export interface Deal {
   title: string
   contact_name: string
   contact_email: string
+  contact_phone: string
   stage: DealStage
   value_inr: number
   notes: string
@@ -79,6 +86,7 @@ export interface DealInput {
   title: string
   contact_name: string
   contact_email: string
+  contact_phone: string
   stage: DealStage
   value_inr: number
   notes: string
@@ -101,7 +109,18 @@ export interface SweepResponse {
 }
 
 // ---------------------------------------------------------------- approvals & receipts
-export type ProposalStatus = 'pending' | 'blocked' | 'approved' | 'sent' | 'booked' | 'rejected' | 'expired'
+export type ProposalStatus =
+  | 'pending'
+  | 'blocked'
+  | 'approved'
+  | 'sent'
+  | 'booked'
+  | 'updated'
+  | 'deleted'
+  | 'rejected'
+  | 'expired'
+
+export type ActionKind = 'email' | 'whatsapp' | 'calendar' | 'calendar_update' | 'calendar_delete'
 
 export interface MeetingPayload {
   start_utc: string
@@ -110,6 +129,16 @@ export interface MeetingPayload {
   timezone: string
   with_meet: boolean
   organizer: string
+  attendees?: string[]
+  reminder_minutes?: number | null
+}
+
+export type ActionPayload = MeetingPayload & {
+  event_id?: string
+  to?: string
+  title?: string
+  when?: string
+  before?: { title?: string; start?: string; end?: string }
 }
 
 export interface MeetingRequest {
@@ -130,7 +159,7 @@ export interface FactUsed {
 export interface Proposal {
   ref: string
   deal_id: string | null
-  kind: string
+  kind: ActionKind
   deal_title: string
   contact_name: string
   contact_email: string
@@ -145,7 +174,7 @@ export interface Proposal {
   created_at: string
   expires_at: string
   decided_at: string | null
-  payload: MeetingPayload | null
+  payload: ActionPayload | null
   receipt_id: string | null
 }
 
@@ -158,7 +187,8 @@ export interface Receipt {
   receipt_id: string
   action_ref: string
   action_kind: string
-  status: 'sent' | 'booked' | 'approved_manual' | 'failed'
+  status: 'sent' | 'booked' | 'updated' | 'deleted' | 'approved_manual' | 'failed'
+  delivery_status?: string | null
   recipient_email: string | null
   subject: string | null
   rendered_hash: string
@@ -171,7 +201,7 @@ export interface Receipt {
 
 export interface DecisionResponse {
   ref: string
-  status: 'approved' | 'sent' | 'booked' | 'rejected'
+  status: 'approved' | 'sent' | 'booked' | 'updated' | 'deleted' | 'rejected'
   receipt: Receipt | null
   message: string
 }
@@ -215,6 +245,14 @@ export interface ChatMessage {
   provider?: string | null
   model?: string | null
   created_at: string
+  meta?: { actions?: string[]; tool_calls?: ToolCallSummary[] } | null
+  actions?: Proposal[]
+}
+
+export interface ToolCallSummary {
+  name: string
+  ok: boolean
+  summary: string
 }
 
 export interface ChatSession {
@@ -230,7 +268,27 @@ export interface ChatResponse {
   session_title: string
   user_message: ChatMessage
   reply: ChatMessage
-  usage: { input_tokens: number; output_tokens: number }
+  actions: Proposal[]
+  tool_calls: ToolCallSummary[]
+  usage: { input_tokens: number; output_tokens: number; steps?: number }
+}
+
+export interface WhatsAppSettings {
+  provider: 'twilio' | 'meta'
+  account_id: string
+  from_number: string
+  has_token: boolean
+  masked_token: string | null
+  updated_at: string
+  last_tested_at: string | null
+  last_test_ok: boolean | null
+  last_test_message: string | null
+}
+
+export interface WhatsAppSettingsResponse {
+  configured: boolean
+  settings: WhatsAppSettings | null
+  providers: Record<string, string>
 }
 
 // ---------------------------------------------------------------- settings
