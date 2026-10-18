@@ -109,7 +109,8 @@ No AI keys are configured on the server. Each user brings their own:
 2. **Deals** → add deals with contact name, email, value and last-contact date.
 3. **Deals → Draft follow-up** (or *Draft for all quiet deals*) → review the draft in
    **Approvals**, edit if needed, then *Approve & send*.
-4. **Chat** → ask about your pipeline; answers are grounded in your own data.
+4. **Chat** → ask about your pipeline, or tell your chief of staff to act (below). Click
+   the **mic** to dictate instead of typing.
 5. *(Optional)* **API Keys → Connect Google** (Gmail + Calendar) or **Email sending (SMTP)** so
    approvals send real email; with Google, **Deals → Schedule meeting** books calendar invites.
 
@@ -117,6 +118,69 @@ Saved API keys and SMTP passwords are encrypted with `APP_ENCRYPTION_KEY` (or a 
 generated once at `APP_KEY_FILE`). The Docker API and a locally run API share one
 database, so keep the same key in `.env` for both. Losing the key makes saved keys
 unreadable.
+
+## Chat agent: email, WhatsApp and Google Calendar
+
+The chat runs a tool-calling agent on the user's own AI key (native function calling on
+Anthropic, OpenAI-compatible providers and Gemini). Examples:
+
+- *"Send a follow-up email to Asha about the pilot"*
+- *"Text Raj on WhatsApp that we are ready"*
+- *"Set a reminder for client check-in tomorrow at 3 PM"*
+- *"What's on my calendar on Friday?"*, then *"move the 4 PM call to 5"* / *"cancel it"*
+
+| Tool | What it does |
+|---|---|
+| `find_contacts` | Looks up names, emails and phone numbers in the user's deals (never invented) |
+| `draft_email` | Prepares an email (Gmail, SMTP, or manual send) |
+| `send_whatsapp` | Prepares a WhatsApp message (Twilio or Meta Cloud API) |
+| `list_calendar_events` | Reads Google Calendar for a time range |
+| `create_calendar_event` / `set_reminder` | Prepares an event with invites + Meet link, or a personal pop-up reminder |
+| `update_calendar_event` / `delete_calendar_event` | Prepares a change or deletion of an existing event |
+
+**Nothing external happens without confirmation.** Write tools create hash-bound
+actions that appear as cards under the reply (*Confirm & send* / *Cancel*) and in
+**Approvals**. They pass the same G01–G15 guards, check calendar conflicts, and the
+hash covers the recipient, text, time and attendees. Times are parsed in the user's
+profile timezone. Tool failures (missing setup, ambiguous contact, invalid number,
+past time, rate limits) go back to the model as readable errors, so the conversation
+continues and the user gets a clear explanation.
+
+**WhatsApp setup** (API Keys → WhatsApp messaging), using the user's own account:
+- *Twilio* (easiest to test): Account SID, Auth Token and the WhatsApp sender, e.g. the
+  sandbox number `+14155238886`. Recipients first send `join <code>` to the sandbox.
+- *Meta WhatsApp Cloud API*: Phone Number ID and an access token. Test numbers only
+  reach recipients on the allowed list.
+- Free-form messages reach people who messaged that number in the last 24 hours (a
+  WhatsApp rule). Each send logs the provider status, and Twilio statuses can be
+  refreshed from the receipt.
+
+**Test mode** (Settings → Test mode): while it's on, every approved email, WhatsApp
+message and calendar invite goes to the configured test recipients (e.g. Jayraj's and
+the lead's addresses) instead of the real contact, marked `[TEST → original recipient]`.
+
+**Voice dictation**: the mic button in Chat uses the browser's speech recognition
+(Chrome, Edge, Safari). The transcript streams into the input box for review, or is
+sent automatically if *Send automatically when I stop dictating* is ticked. Denied
+microphone access and unsupported browsers show a clear message.
+
+### MCP server
+
+The same tools are available to any MCP client (Claude Desktop, Cursor and others)
+through `backend/mcp_server.py`, a stdio server that signs in as one user and calls the API.
+Write tools still only prepare actions that the user confirms in the app.
+
+```bash
+pip install -e ".[mcp]"
+COS_API_URL=https://chief-of-staff-eight-sigma.vercel.app COS_EMAIL=you@example.com COS_PASSWORD=... python -m backend.mcp_server
+```
+
+Claude Desktop (`claude_desktop_config.json`):
+```json
+{"mcpServers": {"chief-of-staff": {"command": "python", "args": ["-m", "backend.mcp_server"],
+  "cwd": "<repo path>", "env": {"COS_API_URL": "https://chief-of-staff-eight-sigma.vercel.app",
+  "COS_EMAIL": "you@example.com", "COS_PASSWORD": "..."}}}}
+```
 
 ## Tests
 
@@ -130,7 +194,17 @@ cd frontend && npm test -- --run          # frontend
 cd frontend && npm run build              # type-check + production bundle
 ```
 
-LLM and SMTP calls are faked in the tests, so no network or keys are needed.
+LLM, SMTP, Google, Twilio and Meta calls are faked in the tests, so no network or keys
+are needed.
+
+**End-to-end sanity check** of a running API (registers a throwaway user, exercises
+every endpoint group, and fails on any 5xx or unexpected status; the user is deleted
+afterwards):
+
+```bash
+python scripts/sanity_check.py                                             # local :8000
+python scripts/sanity_check.py https://chief-of-staff-eight-sigma.vercel.app # live
+```
 
 ## API overview
 
@@ -139,12 +213,13 @@ All routes except auth and health require the `X-Session-ID` header (or
 
 | Area | Routes |
 |---|---|
-| Auth | `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/session` |
+| Auth | `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/session`, `DELETE /api/account` |
 | Profile | `GET/PUT /api/profile` |
 | Deals | `GET/POST /api/deals`, `GET/PUT/DELETE /api/deals/{id}`, `POST /api/deals/{id}/draft-followup`, `POST /api/sweep` |
 | Approvals | `GET /api/approvals?status=pending\|blocked\|all`, `PUT /api/approvals/{ref}`, `POST /api/approvals/{ref}/decision` |
 | Records | `GET /api/receipts`, `GET /api/receipts/{id}`, `GET /api/activity`, `GET /api/brief` |
-| Chat | `POST /api/chat`, `GET /api/chat/sessions`, `GET/PUT/DELETE /api/chat/sessions/{id}` |
+| Chat & agent | `POST /api/chat`, `GET /api/chat/sessions`, `GET/PUT/DELETE /api/chat/sessions/{id}`, `GET /api/agent/tools`, `POST /api/agent/tools/{name}` |
+| WhatsApp | `GET/PUT/DELETE /api/settings/whatsapp`, `POST /api/settings/whatsapp/test`, `POST /api/receipts/{id}/refresh-delivery` |
 | API keys | `GET /api/settings/api-keys`, `PUT/DELETE /api/settings/api-keys/{provider}`, `POST /api/settings/api-keys/{provider}/test`, `PUT /api/settings/active-provider`, `GET /api/settings/usage` |
 | Email | `GET/PUT/DELETE /api/settings/email`, `POST /api/settings/email/test` |
 | Google | `GET/DELETE /api/integrations/google`, `POST /api/integrations/google/connect`, `GET /api/integrations/google/callback`, `POST /api/integrations/google/test`, `POST /api/deals/{id}/meeting` |
@@ -156,5 +231,8 @@ Interactive docs: http://localhost:8000/docs
 
 - Each API process holds one database connection; scale with more workers or a pool if needed.
 - Emails are plain text. Incoming mail is not read (that needs a restricted Gmail scope and Google's security review).
+- WhatsApp sends free-form text only; template messages (outside the 24-hour window) and
+  incoming WhatsApp webhooks are not implemented. Meta delivery statuses need webhooks.
+- Voice dictation depends on the browser's speech service (not available in Firefox).
 - The worker container exposes health only; drafting and sending happen in the API request.
 - The benchmark harness under `bench/` runs on the deterministic fake runner, not on a model.
