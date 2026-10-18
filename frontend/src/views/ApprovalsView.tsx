@@ -9,6 +9,7 @@ import type { DashboardContext } from '../pages/DashboardPage'
 import { CopyIcon } from '../components/Icons'
 import { EmptyPanel, PageHeader, Spinner, StatusBadge, VerdictBadge } from '../components/ui'
 import { formatDateTime, timeAgo } from '../utils/formatters'
+import { kindLabel } from '../components/ActionCard'
 
 type Tab = 'pending' | 'blocked' | 'all'
 
@@ -151,7 +152,7 @@ function ProposalCard({ proposal, ctx }: { proposal: Proposal; ctx: DashboardCon
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            {isMeeting && <span className="cos-badge cos-badge-green">Meeting</span>}
+            {current.kind !== 'email' && <span className="cos-badge cos-badge-green">{kindLabel(current.kind)}</span>}
             <span style={{ fontWeight: 800, color: '#FFFFFF' }}>{isMeeting ? 'With' : 'To'} {current.contact_name}</span>
             <span className="cos-muted" style={{ fontSize: '0.8rem' }}>&lt;{current.contact_email}&gt;</span>
             <VerdictBadge verdict={current.policy_verdict} />
@@ -226,7 +227,15 @@ function ProposalCard({ proposal, ctx }: { proposal: Proposal; ctx: DashboardCon
               Reject
             </button>
             <button type="button" className="cos-btn cos-btn-primary cos-btn-sm" onClick={() => decide('approve')} disabled={busy || current.status === 'blocked'} title={current.status === 'blocked' ? 'Edit the draft to clear the blocking guards' : isMeeting ? 'Create the event and send the invite' : 'Approve and send this exact text'}>
-              {busy ? 'Working...' : isMeeting ? 'Approve & book' : 'Approve & send'}
+              {busy
+                ? 'Working...'
+                : isMeeting
+                  ? 'Approve & book'
+                  : current.kind === 'calendar_update'
+                    ? 'Approve change'
+                    : current.kind === 'calendar_delete'
+                      ? 'Approve delete'
+                      : 'Approve & send'}
             </button>
           </>
         )}

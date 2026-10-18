@@ -10,9 +10,11 @@ import { ShieldIcon } from '../components/Icons'
 import { PageHeader, Spinner, StatusBadge } from '../components/ui'
 import { formatDateTime } from '../utils/formatters'
 
+type ProfileForm = Required<Omit<ProfileUpdate, 'sandbox_enabled' | 'sandbox_emails' | 'sandbox_phones'>>
+
 export function SettingsView({ ctx, onLogout }: { ctx: DashboardContext; onLogout: () => void }): JSX.Element {
   const { user } = ctx
-  const [form, setForm] = useState<Required<ProfileUpdate>>({
+  const [form, setForm] = useState<ProfileForm>({
     name: user.name,
     role: user.role,
     business_name: user.business_name,
@@ -74,7 +76,7 @@ export function SettingsView({ ctx, onLogout }: { ctx: DashboardContext; onLogou
     }
   }
 
-  const field = (key: keyof ProfileUpdate, label: string, props: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
+  const field = (key: keyof ProfileForm, label: string, props: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
     <div>
       <label className="cos-label" htmlFor={`profile-${key}`}>{label}</label>
       <input
@@ -134,6 +136,8 @@ export function SettingsView({ ctx, onLogout }: { ctx: DashboardContext; onLogou
           </div>
         </form>
 
+        <TestModeCard ctx={ctx} />
+
         <div className="cos-card" style={{ marginBottom: '1.25rem', borderColor: user.kill_switch_active ? 'rgba(252, 211, 77, 0.4)' : undefined }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
             <div>
@@ -176,6 +180,76 @@ export function SettingsView({ ctx, onLogout }: { ctx: DashboardContext; onLogou
             </>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Test mode (sandbox): reroutes every outbound email, WhatsApp message and calendar
+ * invite to internal test recipients, marked with the original recipient.
+ */
+function TestModeCard({ ctx }: { ctx: DashboardContext }): JSX.Element {
+  const { user } = ctx
+  const [emails, setEmails] = useState(user.sandbox_emails)
+  const [phones, setPhones] = useState(user.sandbox_phones)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const save = async (enabled: boolean) => {
+    setBusy(true)
+    setError(null)
+    try {
+      const updated = await apiCall<User>('/profile', {
+        method: 'PUT',
+        body: { sandbox_emails: emails, sandbox_phones: phones, sandbox_enabled: enabled },
+      })
+      ctx.onUserChange(updated)
+      setEmails(updated.sandbox_emails)
+      setPhones(updated.sandbox_phones)
+      ctx.notify(enabled ? 'Test mode is on: outbound goes to your test recipients' : 'Test recipients saved')
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="cos-card" style={{ marginBottom: '1.25rem', borderColor: user.sandbox_enabled ? 'rgba(252, 211, 77, 0.4)' : undefined }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
+        <div>
+          <div style={{ fontWeight: 800, color: '#FFFFFF' }}>
+            Test mode {user.sandbox_enabled && <span className="cos-badge cos-badge-amber">on</span>}
+          </div>
+          <div className="cos-muted" style={{ fontSize: '0.8rem', marginTop: '0.2rem' }}>
+            While on, every approved email, WhatsApp message and calendar invite goes to these test recipients instead of the real contact, marked with who it was meant for.
+          </div>
+        </div>
+        <button
+          type="button"
+          className={`cos-btn ${user.sandbox_enabled ? 'cos-btn-ghost' : 'cos-btn-primary'}`}
+          onClick={() => save(!user.sandbox_enabled)}
+          disabled={busy}
+        >
+          {busy ? 'Saving...' : user.sandbox_enabled ? 'Turn off test mode' : 'Turn on test mode'}
+        </button>
+      </div>
+      <div className="cos-grid cos-grid-2" style={{ gap: '0.85rem' }}>
+        <div>
+          <label className="cos-label" htmlFor="sandbox-emails">Test email recipients</label>
+          <input id="sandbox-emails" className="cos-input" value={emails} onChange={(e) => setEmails(e.target.value)} placeholder="jayraj@company.com, lead@company.com" />
+        </div>
+        <div>
+          <label className="cos-label" htmlFor="sandbox-phones">Test WhatsApp numbers</label>
+          <input id="sandbox-phones" className="cos-input" value={phones} onChange={(e) => setPhones(e.target.value)} placeholder="+91 98765 43210, +91 ..." />
+        </div>
+      </div>
+      {error && <div className="cos-alert cos-alert-error" style={{ marginTop: '0.75rem' }}>{error}</div>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
+        <button type="button" className="cos-btn cos-btn-ghost cos-btn-sm" onClick={() => save(user.sandbox_enabled)} disabled={busy}>
+          Save recipients
+        </button>
       </div>
     </div>
   )

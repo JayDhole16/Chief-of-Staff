@@ -37,5 +37,8 @@ export const TEST_USER: User = {
   active_llm_provider: null,
   kill_switch_active: false,
   kill_switch_reason: null,
+  sandbox_enabled: false,
+  sandbox_emails: '',
+  sandbox_phones: '',
   created_at: '2026-10-18T00:00:00Z',
 }

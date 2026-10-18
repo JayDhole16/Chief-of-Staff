@@ -11,6 +11,7 @@ import type { DashboardContext } from '../pages/DashboardPage'
 import { KeyIcon, MailIcon, TrashIcon } from '../components/Icons'
 import { PageHeader, Spinner } from '../components/ui'
 import { GoogleConnect } from '../components/GoogleConnect'
+import { WhatsAppSettings } from '../components/WhatsAppSettings'
 import { formatDateTime, formatTokens, timeAgo } from '../utils/formatters'
 
 export function ApiKeysView({ ctx }: { ctx: DashboardContext }): JSX.Element {
@@ -123,6 +124,7 @@ export function ApiKeysView({ ctx }: { ctx: DashboardContext }): JSX.Element {
             </div>
 
             <GoogleConnect ctx={ctx} />
+            <WhatsAppSettings ctx={ctx} />
             <EmailSection ctx={ctx} />
           </>
         )}

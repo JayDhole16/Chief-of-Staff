@@ -32,6 +32,15 @@ export function ActivityView({ ctx }: { ctx: DashboardContext }): JSX.Element {
 
   useEffect(load, [load])
 
+  const refreshDelivery = async () => {
+    if (!receipt) return
+    try {
+      setReceipt(await apiCall<Receipt>(`/receipts/${receipt.receipt_id}/refresh-delivery`, { method: 'POST' }))
+    } catch (err) {
+      ctx.notify(errorMessage(err), 'error')
+    }
+  }
+
   const openReceipt = async (id: string) => {
     try {
       setReceipt(await apiCall<Receipt>(`/receipts/${id}`))
@@ -83,6 +92,16 @@ export function ActivityView({ ctx }: { ctx: DashboardContext }): JSX.Element {
           <div style={{ display: 'grid', gap: '0.55rem', fontSize: '0.84rem' }}>
             <div>
               Status: <StatusBadge status={receipt.status} />
+              {receipt.delivery_status && (
+                <span style={{ marginLeft: '0.6rem' }}>
+                  Delivery: <StatusBadge status={receipt.delivery_status} />
+                </span>
+              )}
+              {receipt.action_kind === 'whatsapp' && receipt.external_id && (
+                <button type="button" className="cos-btn cos-btn-ghost cos-btn-sm" style={{ marginLeft: '0.6rem' }} onClick={refreshDelivery}>
+                  Refresh delivery status
+                </button>
+              )}
             </div>
             <div>To: <strong style={{ color: '#FFFFFF' }}>{receipt.recipient_email}</strong></div>
             <div>Subject: {receipt.subject}</div>

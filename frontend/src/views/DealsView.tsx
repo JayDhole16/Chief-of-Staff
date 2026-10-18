@@ -18,6 +18,7 @@ const EMPTY_DEAL: DealInput = {
   title: '',
   contact_name: '',
   contact_email: '',
+  contact_phone: '',
   stage: 'lead',
   value_inr: 0,
   notes: '',
@@ -82,6 +83,7 @@ export function DealsView({ ctx }: { ctx: DashboardContext }): JSX.Element {
         title: d.title,
         contact_name: d.contact_name,
         contact_email: d.contact_email,
+        contact_phone: d.contact_phone || '',
         stage: d.stage,
         value_inr: d.value_inr,
         notes: d.notes,
@@ -243,6 +245,7 @@ export function DealsView({ ctx }: { ctx: DashboardContext }): JSX.Element {
                         <div className="cos-muted" style={{ fontSize: '0.78rem', marginTop: '0.25rem' }}>
                           {d.contact_name}
                           {d.contact_email ? ` · ${d.contact_email}` : ' · no email'}
+                          {d.contact_phone ? ` · ${d.contact_phone}` : ''}
                           {d.last_contact_at ? ` · last contact ${timeAgo(d.last_contact_at)}` : ''}
                         </div>
                         {d.notes && <div className="cos-dim" style={{ fontSize: '0.78rem', marginTop: '0.35rem', whiteSpace: 'pre-wrap' }}>{d.notes}</div>}
@@ -314,6 +317,12 @@ export function DealsView({ ctx }: { ctx: DashboardContext }): JSX.Element {
               <div>
                 <label className="cos-label" htmlFor="deal-email">Contact email</label>
                 <input id="deal-email" className="cos-input" type="email" value={editing.form.contact_email} onChange={(e) => setField('contact_email', e.target.value)} />
+              </div>
+              <div>
+                <label className="cos-label" htmlFor="deal-phone">
+                  WhatsApp / phone <span className="cos-dim" style={{ fontWeight: 400 }}>(with country code)</span>
+                </label>
+                <input id="deal-phone" className="cos-input" type="tel" value={editing.form.contact_phone} onChange={(e) => setField('contact_phone', e.target.value)} placeholder="+91 98765 43210" />
               </div>
               <div>
                 <label className="cos-label" htmlFor="deal-value">Value (₹)</label>
