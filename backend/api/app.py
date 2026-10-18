@@ -65,6 +65,7 @@ from backend.services.inbound import (
     InboundProcessingPipeline,
 )
 from backend.services.settings_store import (
+    SettingsStore,
     get_evolus_view,
     get_google_view,
     get_integrations_section,
@@ -1299,9 +1300,12 @@ def create_app() -> FastAPI:
     # -----------------------------------------------------------------------
     # Settings & Kill Switch (T09.5) & Integrations
     # -----------------------------------------------------------------------
+    def _settings_store() -> SettingsStore:
+        return SettingsStore(os.getenv("SETTINGS_STORE_PATH", "settings.local.json"))
+
     @app.get("/api/settings", response_model=SystemSettingsSchema)
     def get_settings():
-        store = load_settings()
+        store = _settings_store()
         return SystemSettingsSchema(
             founder={
                 "name": state.founder_profile.get("name", "Meera Nair"),
@@ -1332,13 +1336,29 @@ def create_app() -> FastAPI:
 
     @app.put("/api/integrations/evolus", response_model=EvolusSettingsView)
     def update_evolus_integration(req: EvolusConfigUpdate):
-        store = update_evolus_settings(req)
-        return get_evolus_view(store)
+        store = _settings_store()
+        cfg = store.load_evolus()
+        if req.api_key is not None:
+            trimmed = req.api_key.strip()
+            cfg.api_key = trimmed if trimmed != "" else None
+        store.save_evolus(cfg)
+        return get_evolus_view(cfg)
 
     @app.put("/api/integrations/model", response_model=ModelSettingsView)
     def update_model_integration(req: ModelConfigUpdate):
-        store = update_model_settings(req)
-        return get_model_view(store)
+        store = _settings_store()
+        cfg = store.load_model()
+        if req.base_url is not None:
+            trimmed = req.base_url.strip()
+            cfg.base_url = trimmed if trimmed != "" else None
+        if req.model_name is not None:
+            trimmed = req.model_name.strip()
+            cfg.model_name = trimmed if trimmed != "" else None
+        if req.api_key is not None:
+            trimmed = req.api_key.strip()
+            cfg.api_key = trimmed if trimmed != "" else None
+        store.save_model(cfg)
+        return get_model_view(cfg)
 
     @app.put("/api/integrations/google", response_model=GoogleSettingsView)
     def update_google_integration(req: GoogleConnectionUpdate):
@@ -1356,12 +1376,16 @@ def create_app() -> FastAPI:
     @app.post("/api/integrations/{name}/test", response_model=IntegrationTestResult)
     def test_integration(name: str):
         if name == "evolus":
-            store = load_settings()
-            if not (store.evolus.api_key and store.evolus.api_key.strip()):
+            store = _settings_store()
+            cfg = store.load_evolus()
+            if not (cfg.api_key and cfg.api_key.strip()):
                 raise HTTPException(status_code=409, detail="evolus is not configured")
-            result = state.adapters.evolus.test_connection(api_key=store.evolus.api_key)
+            result = state.adapters.evolus.test_connection(api_key=cfg.api_key)
             now = datetime.now(timezone.utc)
-            record_evolus_test_result(ok=result.ok, message=result.message, tested_at=now)
+            cfg.last_tested_at = now.isoformat()
+            cfg.last_test_result = "ok" if result.ok else "failed"
+            cfg.last_test_message = result.message
+            store.save_evolus(cfg)
             return IntegrationTestResult(
                 name="evolus",
                 ok=result.ok,
@@ -1369,16 +1393,20 @@ def create_app() -> FastAPI:
                 tested_at=now,
             )
         elif name == "model":
-            store = load_settings()
-            if not (store.model.base_url and store.model.base_url.strip()):
+            store = _settings_store()
+            cfg = store.load_model()
+            if not (cfg.base_url and cfg.base_url.strip()):
                 raise HTTPException(status_code=409, detail="model is not configured")
             result = state.adapters.model.test_connection(
-                base_url=store.model.base_url,
-                model_name=store.model.model_name,
-                api_key=store.model.api_key,
+                base_url=cfg.base_url,
+                model_name=cfg.model_name,
+                api_key=cfg.api_key,
             )
             now = datetime.now(timezone.utc)
-            record_model_test_result(ok=result.ok, message=result.message, tested_at=now)
+            cfg.last_tested_at = now.isoformat()
+            cfg.last_test_result = "ok" if result.ok else "failed"
+            cfg.last_test_message = result.message
+            store.save_model(cfg)
             return IntegrationTestResult(
                 name="model",
                 ok=result.ok,

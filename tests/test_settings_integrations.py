@@ -2,16 +2,24 @@
 Tests for Settings & Integrations Backend Slice.
 
 Covers:
-1. Defaults: GET shows evolus/model not_configured, google connected (seeded state).
-2. PUT evolus sets key -> masked view; raw key absent from PUT and GET response bodies;
-   store file contains it (persistence proven by fresh read).
-3. PUT null keeps, "" clears — for evolus and model fields.
-4. PUT google connect/disconnect toggles the view; /test reflects it.
-5. /test: 200 + recorded last_tested_at when configured; 409 unconfigured; 404 unknown.
-6. mask_secret unit cases (long key last-4, short key fully masked).
-7. extra="forbid" -> 422 on an unknown field.
-8. Corrupt store file -> defaults, endpoint still 200.
-9. Store survives /api/dev/reset-demo.
+1. Task 1 Contracts: Model imports, view defaults, and extra="forbid" raising ValidationError.
+2. Task 2 Store & Masking:
+   - mask_secret unit tests (long key last-4, short key fully masked, empty/None).
+   - SettingsStore roundtrip save/load in tmp_path.
+   - File created only after save.
+   - Corrupt store fallback to defaults without overwrite (test_corrupt_store_file_falls_back_to_defaults).
+3. Task 3 Adapters:
+   - Each fake returns ok=True and message containing "fake".
+   - build_adapters() returns ports.
+4. Task 4 Endpoints & Review Focus:
+   - Defaults on startup.
+   - test_put_evolus_key_never_echoed_and_get_masks_it.
+   - test_evolus_put_null_keeps_existing_key.
+   - PUT model set / keep / clear.
+   - PUT google connect / disconnect.
+   - /test 200, 409, 404 paths.
+   - 422 on extra / unknown fields.
+   - Store persistence across /api/dev/reset-demo.
 """
 
 from datetime import datetime, timezone
@@ -19,10 +27,38 @@ import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 import pytest
 
 from backend.api.app import app, state
-from backend.services.settings_store import load_settings, mask_secret
+from backend.contracts.settings import (
+    EvolusConfigUpdate,
+    EvolusSettingsView,
+    GoogleConnectionUpdate,
+    GoogleSettingsView,
+    IntegrationName,
+    IntegrationsSection,
+    IntegrationTestResult,
+    ModelConfigUpdate,
+    ModelSettingsView,
+)
+from backend.integrations import (
+    Adapters,
+    EvolusPort,
+    FakeEvolusClient,
+    FakeGoogleClient,
+    FakeModelClient,
+    GooglePort,
+    ModelPort,
+    build_adapters,
+)
+from backend.services.settings_store import (
+    EvolusConfig,
+    ModelConfig,
+    SettingsStore,
+    load_settings,
+    mask_secret,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -39,6 +75,164 @@ def isolated_settings_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def client() -> TestClient:
     return TestClient(app)
 
+
+# ---------------------------------------------------------------------------
+# Task 1: Contracts Module Unit Tests
+# ---------------------------------------------------------------------------
+
+def test_contracts_imports_and_view_defaults():
+    """Verify contracts import cleanly and have correct default fields."""
+    ev_view = EvolusSettingsView(status="not_configured")
+    assert ev_view.status == "not_configured"
+    assert ev_view.masked_api_key is None
+    assert ev_view.last_tested_at is None
+    assert ev_view.last_test_result is None
+    assert ev_view.last_test_message is None
+
+    mo_view = ModelSettingsView(status="not_configured")
+    assert mo_view.status == "not_configured"
+    assert mo_view.base_url is None
+    assert mo_view.model_name is None
+    assert mo_view.masked_api_key is None
+
+    g_view = GoogleSettingsView(status="connected", connected=True)
+    assert g_view.connected is True
+    assert g_view.status == "connected"
+
+    sec = IntegrationsSection(evolus=ev_view, model=mo_view, google=g_view)
+    assert sec.evolus.status == "not_configured"
+
+    res = IntegrationTestResult(
+        name="evolus",
+        ok=True,
+        message="ok",
+        tested_at=datetime.now(timezone.utc),
+    )
+    assert res.name == "evolus"
+
+
+def test_contracts_extra_fields_forbidden_validation_error():
+    """extra='forbid' raises ValidationError on an unknown field."""
+    with pytest.raises(ValidationError):
+        EvolusConfigUpdate.model_validate({"api_key": "x", "unknown_field": "bad"})
+
+    with pytest.raises(ValidationError):
+        ModelConfigUpdate.model_validate({"base_url": "http://x", "extra_param": 123})
+
+    with pytest.raises(ValidationError):
+        GoogleConnectionUpdate.model_validate({"action": "connect", "foo": "bar"})
+
+
+# ---------------------------------------------------------------------------
+# Task 2: Settings Store + Masking Unit Tests
+# ---------------------------------------------------------------------------
+
+def test_mask_secret_unit_cases():
+    """mask_secret unit cases (long key last-4, short key fully masked, empty/None)."""
+    assert mask_secret("12345678") == "••••5678"
+    assert mask_secret("token-dummy-123456") == "••••3456"
+    assert mask_secret("a" * 50 + "wxyz") == "••••wxyz"
+
+    assert mask_secret("1234567") == "••••"
+    assert mask_secret("1234") == "••••"
+    assert mask_secret("x") == "••••"
+
+    assert mask_secret("") is None
+    assert mask_secret(None) is None
+
+
+def test_settings_store_file_created_only_after_save(tmp_path: Path):
+    """Store file is NOT created on read; it is created only after save."""
+    store_file = tmp_path / "custom_settings.json"
+    store = SettingsStore(store_file)
+
+    # File does not exist yet; reading returns defaults and does NOT touch disk
+    ev_default = store.load_evolus()
+    assert ev_default.api_key is None
+    assert not store_file.exists()
+
+    mo_default = store.load_model()
+    assert mo_default.base_url is None
+    assert not store_file.exists()
+
+    # Saving creates the file
+    store.save_evolus(EvolusConfig(api_key="stored-test-token-1111"))
+    assert store_file.exists()
+
+    loaded = store.load_evolus()
+    assert loaded.api_key == "stored-test-token-1111"
+
+
+def test_settings_store_roundtrip_save_load(tmp_path: Path):
+    """SettingsStore roundtrip save/load in tmp_path."""
+    store_file = tmp_path / "roundtrip.json"
+    store = SettingsStore(store_file)
+
+    store.save_evolus(EvolusConfig(api_key="token-a-1234", last_test_result="ok"))
+    store.save_model(ModelConfig(base_url="https://api.example.com", model_name="gpt-4o"))
+
+    ev = store.load_evolus()
+    assert ev.api_key == "token-a-1234"
+    assert ev.last_test_result == "ok"
+
+    mo = store.load_model()
+    assert mo.base_url == "https://api.example.com"
+    assert mo.model_name == "gpt-4o"
+
+
+def test_corrupt_store_file_falls_back_to_defaults(client: TestClient, isolated_settings_store: Path):
+    """Corrupt store file -> defaults, endpoint still 200, no overwrite until PUT."""
+    corrupted_content = "{ invalid json syntax: true, missing_braces"
+    isolated_settings_store.write_text(corrupted_content, encoding="utf-8")
+
+    # Endpoint must not crash (returns defaults)
+    res = client.get("/api/settings")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["integrations"]["evolus"]["status"] == "not_configured"
+    assert data["integrations"]["model"]["status"] == "not_configured"
+
+    # Must NOT overwrite corrupted file on read
+    assert isolated_settings_store.read_text(encoding="utf-8") == corrupted_content
+
+    # Next successful PUT successfully overwrites with valid JSON
+    put_res = client.put("/api/integrations/evolus", json={"api_key": "recovered-valid-token"})
+    assert put_res.status_code == 200
+    assert put_res.json()["status"] == "configured"
+
+    new_content = isolated_settings_store.read_text(encoding="utf-8")
+    parsed = json.loads(new_content)
+    assert parsed["evolus"]["api_key"] == "recovered-valid-token"
+
+
+# ---------------------------------------------------------------------------
+# Task 3: Adapter Ports and Fakes Unit Tests
+# ---------------------------------------------------------------------------
+
+def test_fake_adapters_and_ports():
+    """Each fake returns ok=True and message containing 'fake'; build_adapters() returns ports."""
+    adapters: Adapters = build_adapters()
+
+    assert isinstance(adapters.evolus, EvolusPort)
+    assert isinstance(adapters.model, ModelPort)
+    assert isinstance(adapters.google, GooglePort)
+
+    ev_res = adapters.evolus.test_connection(api_key="token-123")
+    assert ev_res.ok is True
+    assert ev_res.message.startswith("fake evolus adapter:")
+
+    mo_res = adapters.model.test_connection(base_url="http://localhost:8000")
+    assert mo_res.ok is True
+    assert mo_res.message.startswith("fake model adapter:")
+
+    g_res = adapters.google.test_connection()
+    assert g_res.ok is True
+    assert g_res.message.startswith("fake google adapter:")
+
+
+# ---------------------------------------------------------------------------
+# Task 4 & Review Focus: Endpoints and Lifecycle Integration Tests
+# ---------------------------------------------------------------------------
 
 def test_defaults_on_fresh_startup(client: TestClient):
     """Defaults: GET shows evolus/model not_configured, google connected (seeded state)."""
@@ -70,11 +264,10 @@ def test_defaults_on_fresh_startup(client: TestClient):
     assert integrations["google"]["last_tested_at"] is None
 
 
-def test_put_evolus_and_security_invariants(client: TestClient, isolated_settings_store: Path):
+def test_put_evolus_key_never_echoed_and_get_masks_it(client: TestClient, isolated_settings_store: Path):
     """
-    PUT evolus sets key -> masked view;
-    raw key absent from PUT and GET response bodies;
-    store file contains it (persistence proven by fresh read).
+    Review Focus: Raw key leakage.
+    Assert raw value is absent from both PUT and GET response texts.
     """
     secret_key = "evolus-dummy-token-12345678"
     res = client.put("/api/integrations/evolus", json={"api_key": secret_key})
@@ -102,24 +295,28 @@ def test_put_evolus_and_security_invariants(client: TestClient, isolated_setting
     assert fresh_store.evolus.api_key == secret_key
 
 
-def test_put_evolus_merge_semantics(client: TestClient, isolated_settings_store: Path):
-    """PUT null keeps, \"\" clears — for evolus."""
+def test_evolus_put_null_keeps_existing_key(client: TestClient, isolated_settings_store: Path):
+    """
+    Review Focus: Merge-rule correctness.
+    PUT null / omitted keeps existing key; "" clears.
+    """
     # 1. Set key
     client.put("/api/integrations/evolus", json={"api_key": "my-dummy-token-9999"})
     res = client.get("/api/settings")
     assert res.json()["integrations"]["evolus"]["masked_api_key"] == "••••9999"
 
-    # 2. PUT null / omitted -> keeps current
-    res_keep = client.put("/api/integrations/evolus", json={"api_key": None})
-    assert res_keep.status_code == 200
-    assert res_keep.json()["status"] == "configured"
-    assert res_keep.json()["masked_api_key"] == "••••9999"
+    # 2. PUT null -> keeps existing key
+    res_keep_null = client.put("/api/integrations/evolus", json={"api_key": None})
+    assert res_keep_null.status_code == 200
+    assert res_keep_null.json()["status"] == "configured"
+    assert res_keep_null.json()["masked_api_key"] == "••••9999"
 
-    res_keep_empty_obj = client.put("/api/integrations/evolus", json={})
-    assert res_keep_empty_obj.status_code == 200
-    assert res_keep_empty_obj.json()["masked_api_key"] == "••••9999"
+    # 3. PUT omitted ({}) -> keeps existing key
+    res_keep_empty = client.put("/api/integrations/evolus", json={})
+    assert res_keep_empty.status_code == 200
+    assert res_keep_empty.json()["masked_api_key"] == "••••9999"
 
-    # 3. PUT "" -> clears
+    # 4. PUT "" -> clears
     res_clear = client.put("/api/integrations/evolus", json={"api_key": ""})
     assert res_clear.status_code == 200
     assert res_clear.json()["status"] == "not_configured"
@@ -128,7 +325,7 @@ def test_put_evolus_merge_semantics(client: TestClient, isolated_settings_store:
     fresh_store = load_settings(isolated_settings_store)
     assert fresh_store.evolus.api_key is None
 
-    # 4. Non-empty string with surrounding spaces -> trimmed and set
+    # 5. Non-empty string with surrounding spaces -> trimmed and set
     res_trimmed = client.put("/api/integrations/evolus", json={"api_key": "   new-trimmed-token-8888   "})
     assert res_trimmed.status_code == 200
     assert res_trimmed.json()["masked_api_key"] == "••••8888"
@@ -287,23 +484,6 @@ def test_test_integration_endpoint_rules_and_lifecycle(client: TestClient):
     assert mview["last_test_message"] == "fake model adapter: connection ok"
 
 
-def test_mask_secret_unit_cases():
-    """mask_secret unit cases (long key last-4, short key fully masked, empty/None)."""
-    # >= 8 characters -> "••••" + last 4
-    assert mask_secret("12345678") == "••••5678"
-    assert mask_secret("dummy-token-abcdef123456") == "••••3456"
-    assert mask_secret("a" * 50 + "wxyz") == "••••wxyz"
-
-    # < 8 characters -> "••••"
-    assert mask_secret("1234567") == "••••"
-    assert mask_secret("1234") == "••••"
-    assert mask_secret("x") == "••••"
-
-    # Empty or None -> None
-    assert mask_secret("") is None
-    assert mask_secret(None) is None
-
-
 def test_extra_fields_forbidden_422(client: TestClient):
     """extra=\"forbid\" -> 422 on an unknown field."""
     res1 = client.put("/api/integrations/evolus", json={"api_key": "key", "unknown_field": "bad"})
@@ -323,31 +503,6 @@ def test_extra_fields_forbidden_422(client: TestClient):
 
     res4 = client.put("/api/integrations/google", json={"action": "unsupported_action"})
     assert res4.status_code == 422
-
-
-def test_corrupt_store_file_fallback_to_defaults(client: TestClient, isolated_settings_store: Path):
-    """Corrupt store file -> defaults, endpoint still 200, no overwrite until PUT."""
-    corrupted_content = "{ invalid json syntax: true, missing_braces"
-    isolated_settings_store.write_text(corrupted_content, encoding="utf-8")
-
-    # Endpoint must not crash (returns defaults)
-    res = client.get("/api/settings")
-    assert res.status_code == 200
-    data = res.json()
-    assert data["integrations"]["evolus"]["status"] == "not_configured"
-    assert data["integrations"]["model"]["status"] == "not_configured"
-
-    # Must NOT overwrite corrupted file on read
-    assert isolated_settings_store.read_text(encoding="utf-8") == corrupted_content
-
-    # Next successful PUT successfully overwrites with valid JSON
-    put_res = client.put("/api/integrations/evolus", json={"api_key": "recovered-valid-key"})
-    assert put_res.status_code == 200
-    assert put_res.json()["status"] == "configured"
-
-    new_content = isolated_settings_store.read_text(encoding="utf-8")
-    parsed = json.loads(new_content)
-    assert parsed["evolus"]["api_key"] == "recovered-valid-key"
 
 
 def test_store_survives_demo_reset(client: TestClient):

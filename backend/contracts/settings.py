@@ -72,14 +72,18 @@ class IntegrationsSection(CompatBaseModel):
     google: GoogleSettingsView
 
 
+IntegrationName = Literal["evolus", "model", "google"]
+
+
 class IntegrationTestResult(CompatBaseModel):
-    name: str
+    name: IntegrationName
     ok: bool
     message: str
     tested_at: datetime
 
 
 __all__ = [
+    "IntegrationName",
     "EvolusConfigUpdate",
     "ModelConfigUpdate",
     "GoogleConnectionUpdate",
