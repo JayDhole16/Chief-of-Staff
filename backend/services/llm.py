@@ -81,6 +81,15 @@ RETIRED_MODELS = {
 # Gemini 3.x thinks by default and thinking tokens count toward maxOutputTokens,
 # so leave headroom for the visible answer.
 GEMINI_THINKING_HEADROOM = 8192
+# Chat and drafting don't need deep reasoning: low thinking keeps Gemini 3.x fast and cheap.
+GEMINI_THINKING_LEVEL = "low"
+
+
+def _timeout_message(label: str) -> str:
+    return (
+        f"{label} took longer than {int(REQUEST_TIMEOUT_SECONDS)} seconds to answer. "
+        "Try again, or pick a faster model in API Keys."
+    )
 
 
 class LLMError(Exception):
@@ -199,6 +208,8 @@ def _anthropic_create(config: LLMConfig, **params: Any) -> Any:
         raise LLMError("Anthropic rate limit or credit limit reached (429). Try again shortly.") from exc
     except anthropic.APIStatusError as exc:
         raise LLMError(f"Anthropic API error {exc.status_code}: {exc.message}") from exc
+    except anthropic.APITimeoutError as exc:
+        raise LLMError(_timeout_message("Anthropic")) from exc
     except anthropic.APIConnectionError as exc:
         raise LLMError("Could not reach the Anthropic API. Check the server's network access.") from exc
     if response.stop_reason == "refusal":
@@ -242,6 +253,8 @@ def _complete_openai_compatible(
     url = f"{(config.base_url or '').rstrip('/')}/chat/completions"
     try:
         response = httpx.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
+    except httpx.TimeoutException as exc:
+        raise LLMError(_timeout_message(label)) from exc
     except httpx.HTTPError as exc:
         raise LLMError(f"Could not reach {label} at {config.base_url}: {exc}") from exc
     if response.status_code >= 400:
@@ -261,32 +274,56 @@ def _complete_openai_compatible(
     )
 
 
+def _gemini_generate(config: LLMConfig, payload: dict[str, Any], max_tokens: int) -> dict[str, Any]:
+    """POST generateContent with Gemini-specific config; returns the parsed body."""
+    label = PROVIDERS["gemini"]["label"]
+    url = f"{(config.base_url or '').rstrip('/')}/models/{config.model}:generateContent"
+    generation: dict[str, Any] = {"maxOutputTokens": max_tokens + GEMINI_THINKING_HEADROOM}
+    if config.model.startswith("gemini-3"):
+        generation["thinkingConfig"] = {"thinkingLevel": GEMINI_THINKING_LEVEL}
+    headers = {"Content-Type": "application/json", "x-goog-api-key": config.api_key or ""}
+
+    def post(body: dict[str, Any]) -> httpx.Response:
+        try:
+            return httpx.post(url, json=body, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
+        except httpx.TimeoutException as exc:
+            raise LLMError(_timeout_message(label)) from exc
+        except httpx.HTTPError as exc:
+            raise LLMError(f"Could not reach {label}: {exc}") from exc
+
+    response = post({**payload, "generationConfig": generation})
+    if response.status_code == 400 and "thinkingConfig" in generation and "thinking" in response.text.lower():
+        # This model/API version rejects the thinking setting: fall back to its default.
+        logging.getLogger("cos.llm").warning("Gemini rejected thinkingConfig for %s; retrying without it", config.model)
+        generation = {k: v for k, v in generation.items() if k != "thinkingConfig"}
+        response = post({**payload, "generationConfig": generation})
+    if response.status_code >= 400:
+        raise LLMError(_http_error_message(label, response))
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise LLMError(f"{label} returned an unexpected response") from exc
+    return body if isinstance(body, dict) else {}
+
+
+def _gemini_output_tokens(usage: dict[str, Any]) -> int:
+    # Thinking tokens are billed as output but reported separately.
+    return int(usage.get("candidatesTokenCount") or 0) + int(usage.get("thoughtsTokenCount") or 0)
+
+
 def _complete_gemini(
     config: LLMConfig, system: str, messages: list[dict[str, str]], max_tokens: int
 ) -> LLMResult:
     label = PROVIDERS["gemini"]["label"]
-    url = f"{(config.base_url or '').rstrip('/')}/models/{config.model}:generateContent"
     payload = {
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": [
             {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
             for m in messages
         ],
-        "generationConfig": {"maxOutputTokens": max_tokens + GEMINI_THINKING_HEADROOM},
     }
+    body = _gemini_generate(config, payload, max_tokens)
     try:
-        response = httpx.post(
-            url,
-            json=payload,
-            headers={"Content-Type": "application/json", "x-goog-api-key": config.api_key or ""},
-            timeout=REQUEST_TIMEOUT_SECONDS,
-        )
-    except httpx.HTTPError as exc:
-        raise LLMError(f"Could not reach {label}: {exc}") from exc
-    if response.status_code >= 400:
-        raise LLMError(_http_error_message(label, response))
-    try:
-        body = response.json()
         parts = body["candidates"][0]["content"]["parts"]
         text = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
     except (ValueError, KeyError, IndexError, TypeError) as exc:
@@ -297,7 +334,7 @@ def _complete_gemini(
         provider=config.provider,
         model=config.model,
         input_tokens=int(usage.get("promptTokenCount") or 0),
-        output_tokens=int(usage.get("candidatesTokenCount") or 0),
+        output_tokens=_gemini_output_tokens(usage),
     )
 
 
@@ -407,6 +444,8 @@ def _agent_openai(config, system, messages, tools, call_tool, max_steps, max_tok
         payload = {"model": config.model, "messages": convo, "tools": tool_defs, "max_tokens": max_tokens}
         try:
             response = httpx.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
+        except httpx.TimeoutException as exc:
+            raise LLMError(_timeout_message(label)) from exc
         except httpx.HTTPError as exc:
             raise LLMError(f"Could not reach {label}: {exc}") from exc
         if response.status_code >= 400:
@@ -442,7 +481,6 @@ def _agent_openai(config, system, messages, tools, call_tool, max_steps, max_tok
 
 def _agent_gemini(config, system, messages, tools, call_tool, max_steps, max_tokens, result) -> None:
     label = PROVIDERS["gemini"]["label"]
-    url = f"{(config.base_url or '').rstrip('/')}/models/{config.model}:generateContent"
     contents: list[dict[str, Any]] = [
         {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]} for m in messages
     ]
@@ -452,21 +490,9 @@ def _agent_gemini(config, system, messages, tools, call_tool, max_steps, max_tok
             "systemInstruction": {"parts": [{"text": system}]},
             "contents": contents,
             "tools": [{"functionDeclarations": declarations}],
-            "generationConfig": {"maxOutputTokens": max_tokens + GEMINI_THINKING_HEADROOM},
         }
+        body = _gemini_generate(config, payload, max_tokens)
         try:
-            response = httpx.post(
-                url,
-                json=payload,
-                headers={"Content-Type": "application/json", "x-goog-api-key": config.api_key or ""},
-                timeout=REQUEST_TIMEOUT_SECONDS,
-            )
-        except httpx.HTTPError as exc:
-            raise LLMError(f"Could not reach {label}: {exc}") from exc
-        if response.status_code >= 400:
-            raise LLMError(_http_error_message(label, response))
-        try:
-            body = response.json()
             content = body["candidates"][0]["content"]
             parts = content.get("parts") or []
         except (ValueError, KeyError, IndexError, TypeError) as exc:
@@ -474,7 +500,7 @@ def _agent_gemini(config, system, messages, tools, call_tool, max_steps, max_tok
         result.steps += 1
         usage = body.get("usageMetadata") or {}
         result.input_tokens += int(usage.get("promptTokenCount") or 0)
-        result.output_tokens += int(usage.get("candidatesTokenCount") or 0)
+        result.output_tokens += _gemini_output_tokens(usage)
         calls = [p["functionCall"] for p in parts if "functionCall" in p]
         if not calls:
             result.text = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()

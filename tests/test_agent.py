@@ -435,3 +435,34 @@ def test_gemini_3_passes_thought_signatures_back_and_echoes_call_ids(monkeypatch
     contents = fake.requests[1]["json"]["contents"]
     assert contents[1] == model_turn  # model turn (with thoughtSignature) returned unchanged
     assert contents[2]["parts"][0]["functionResponse"]["id"] == "call-1"
+
+
+def test_gemini_3_uses_low_thinking_and_counts_thought_tokens(monkeypatch):
+    fake = FakeHTTP([(200, {"candidates": [{"content": {"parts": [{"text": "ok"}]}}], "usageMetadata": {"promptTokenCount": 5, "candidatesTokenCount": 2, "thoughtsTokenCount": 30}})])
+    monkeypatch.setattr(llm.httpx, "post", fake)
+    result = llm.complete(llm.resolve_config("gemini", {"api_key": "k"}), system="s", messages=[{"role": "user", "content": "hi"}])
+    assert fake.requests[0]["json"]["generationConfig"]["thinkingConfig"] == {"thinkingLevel": "low"}
+    assert result.output_tokens == 32  # thinking tokens are billed as output
+
+
+def test_gemini_retries_without_thinking_config_if_rejected(monkeypatch):
+    fake = FakeHTTP([
+        (400, {"error": {"code": 400, "message": 'Invalid JSON payload received. Unknown name "thinkingLevel" at \'generation_config.thinking_config\''}}),
+        (200, {"candidates": [{"content": {"parts": [{"text": "fine"}]}}]}),
+    ])
+    monkeypatch.setattr(llm.httpx, "post", fake)
+    result = llm.complete(llm.resolve_config("gemini", {"api_key": "k"}), system="s", messages=[{"role": "user", "content": "hi"}])
+    assert result.text == "fine"
+    assert "thinkingConfig" in fake.requests[0]["json"]["generationConfig"]
+    assert "thinkingConfig" not in fake.requests[1]["json"]["generationConfig"]
+
+
+def test_slow_provider_reports_a_clear_timeout(monkeypatch):
+    def slow(*args, **kwargs):
+        raise httpx.ReadTimeout("The read operation timed out")
+
+    monkeypatch.setattr(llm.httpx, "post", slow)
+    for provider in ("gemini", "openai"):
+        config = llm.resolve_config(provider, {"api_key": "k"})
+        with pytest.raises(llm.LLMError, match="took longer than 90 seconds"):
+            llm.run_agent(config, system="s", messages=[{"role": "user", "content": "q"}], tools=[], handle_tool=echo_tool)
