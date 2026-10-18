@@ -76,7 +76,7 @@ def test_put_evolus_and_security_invariants(client: TestClient, isolated_setting
     raw key absent from PUT and GET response bodies;
     store file contains it (persistence proven by fresh read).
     """
-    secret_key = "sk-live-super-secret-evolus-key-12345678"
+    secret_key = "evolus-dummy-token-12345678"
     res = client.put("/api/integrations/evolus", json={"api_key": secret_key})
     assert res.status_code == 200
     put_data = res.json()
@@ -105,7 +105,7 @@ def test_put_evolus_and_security_invariants(client: TestClient, isolated_setting
 def test_put_evolus_merge_semantics(client: TestClient, isolated_settings_store: Path):
     """PUT null keeps, \"\" clears — for evolus."""
     # 1. Set key
-    client.put("/api/integrations/evolus", json={"api_key": "my-secret-key-9999"})
+    client.put("/api/integrations/evolus", json={"api_key": "my-dummy-token-9999"})
     res = client.get("/api/settings")
     assert res.json()["integrations"]["evolus"]["masked_api_key"] == "••••9999"
 
@@ -129,15 +129,15 @@ def test_put_evolus_merge_semantics(client: TestClient, isolated_settings_store:
     assert fresh_store.evolus.api_key is None
 
     # 4. Non-empty string with surrounding spaces -> trimmed and set
-    res_trimmed = client.put("/api/integrations/evolus", json={"api_key": "   new-trimmed-key-8888   "})
+    res_trimmed = client.put("/api/integrations/evolus", json={"api_key": "   new-trimmed-token-8888   "})
     assert res_trimmed.status_code == 200
     assert res_trimmed.json()["masked_api_key"] == "••••8888"
-    assert load_settings(isolated_settings_store).evolus.api_key == "new-trimmed-key-8888"
+    assert load_settings(isolated_settings_store).evolus.api_key == "new-trimmed-token-8888"
 
 
 def test_put_model_and_merge_semantics(client: TestClient, isolated_settings_store: Path):
     """PUT null keeps, \"\" clears — for model endpoint fields."""
-    secret_model_key = "sk-model-private-token-4321"
+    secret_model_key = "model-dummy-token-4321"
 
     # 1. Initial configuration
     res = client.put(
@@ -258,7 +258,7 @@ def test_test_integration_endpoint_rules_and_lifecycle(client: TestClient):
     assert goog_view["last_test_message"] == "fake google adapter: connection ok"
 
     # 6. Test Evolus when configured -> 200
-    client.put("/api/integrations/evolus", json={"api_key": "sk-evolus-test-key-5555"})
+    client.put("/api/integrations/evolus", json={"api_key": "evolus-test-token-5555"})
     res_ev_200 = client.post("/api/integrations/evolus/test")
     assert res_ev_200.status_code == 200
     ev_data = res_ev_200.json()
@@ -291,7 +291,7 @@ def test_mask_secret_unit_cases():
     """mask_secret unit cases (long key last-4, short key fully masked, empty/None)."""
     # >= 8 characters -> "••••" + last 4
     assert mask_secret("12345678") == "••••5678"
-    assert mask_secret("sk-live-abcdef123456") == "••••3456"
+    assert mask_secret("dummy-token-abcdef123456") == "••••3456"
     assert mask_secret("a" * 50 + "wxyz") == "••••wxyz"
 
     # < 8 characters -> "••••"
@@ -353,7 +353,8 @@ def test_corrupt_store_file_fallback_to_defaults(client: TestClient, isolated_se
 def test_store_survives_demo_reset(client: TestClient):
     """Settings store survives /api/dev/reset-demo."""
     # 1. Configure integration
-    client.put("/api/integrations/evolus", json={"api_key": "persistent-secret-key-1234"})
+    dummy_key = "saved-token-1234"
+    client.put("/api/integrations/evolus", json={"api_key": dummy_key})
     assert client.get("/api/settings").json()["integrations"]["evolus"]["status"] == "configured"
 
     # 2. Trigger demo reset
