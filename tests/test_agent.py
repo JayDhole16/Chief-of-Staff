@@ -408,3 +408,30 @@ def test_agent_tools_http_endpoint_used_by_mcp(env):
     failed = c.post("/api/agent/tools/send_whatsapp", headers=headers, json={"arguments": {"to": "Asha", "message": "x"}}).json()
     assert failed["ok"] is False and "not set up" in failed["result"]["error"]
     assert c.post("/api/agent/tools/rm_rf", headers=headers, json={}).status_code == 404
+
+
+def test_gemini_defaults_to_3_8_flash_and_retired_models_are_remapped():
+    assert llm.resolve_config("gemini", {"api_key": "k"}).model == "gemini-3.8-flash"
+    assert llm.resolve_config("gemini", {"api_key": "k", "model": "gemini-2.0-flash"}).model == "gemini-3.8-flash"
+    assert llm.resolve_config("gemini", {"api_key": "k", "model": "gemini-3.6-flash"}).model == "gemini-3.6-flash"
+
+
+def test_gemini_3_passes_thought_signatures_back_and_echoes_call_ids(monkeypatch):
+    model_turn = {"role": "model", "parts": [
+        {"text": "thinking...", "thought": True},
+        {"functionCall": {"id": "call-1", "name": "find_contacts", "args": {"query": "a"}}, "thoughtSignature": "sig-abc"},
+    ]}
+    fake = FakeHTTP([
+        (200, {"candidates": [{"content": model_turn}]}),
+        (200, {"candidates": [{"content": {"role": "model", "parts": [{"text": "reasoning", "thought": True}, {"text": "Found Asha."}]}}]}),
+    ])
+    monkeypatch.setattr(llm.httpx, "post", fake)
+    config = llm.resolve_config("gemini", {"api_key": "k"})
+    result = llm.run_agent(config, system="s", messages=[{"role": "user", "content": "q"}], tools=[{"name": "find_contacts", "description": "d", "parameters": {"type": "object", "properties": {}}}], handle_tool=echo_tool)
+    assert result.text == "Found Asha."
+    first = fake.requests[0]
+    assert first["url"].endswith("/models/gemini-3.8-flash:generateContent")
+    assert first["json"]["generationConfig"]["maxOutputTokens"] > 8000
+    contents = fake.requests[1]["json"]["contents"]
+    assert contents[1] == model_turn  # model turn (with thoughtSignature) returned unchanged
+    assert contents[2]["parts"][0]["functionResponse"]["id"] == "call-1"

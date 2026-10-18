@@ -37,7 +37,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     },
     "gemini": {
         "label": "Google Gemini",
-        "default_model": "gemini-2.0-flash",
+        "default_model": "gemini-3.8-flash",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
         "key_hint": "AIza...",
         "docs_url": "https://aistudio.google.com/app/apikey",
@@ -67,6 +67,20 @@ PROVIDERS: dict[str, dict[str, Any]] = {
 
 # Claude models that accept the server-side refusal fallback parameter.
 _ANTHROPIC_FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
+
+
+# Models the provider has shut down, mapped to their current replacement so saved
+# settings keep working (https://ai.google.dev/gemini-api/docs/models).
+RETIRED_MODELS = {
+    "gemini-2.0-flash": "gemini-3.8-flash",
+    "gemini-2.0-flash-lite": "gemini-3.5-flash-lite",
+    "gemini-3-pro-preview": "gemini-3.1-pro-preview",
+    "gemini-3.1-flash-lite-preview": "gemini-3.5-flash-lite",
+}
+
+# Gemini 3.x thinks by default and thinking tokens count toward maxOutputTokens,
+# so leave headroom for the visible answer.
+GEMINI_THINKING_HEADROOM = 8192
 
 
 class LLMError(Exception):
@@ -100,6 +114,7 @@ def resolve_config(provider: str, stored: dict[str, Any] | None) -> LLMConfig:
     meta = PROVIDERS[provider]
     stored = stored or {}
     model = (stored.get("model") or meta["default_model"] or "").strip()
+    model = RETIRED_MODELS.get(model, model)
     base_url = (stored.get("base_url") or meta["base_url"] or "").strip() or None
     api_key = stored.get("api_key")
     if provider != "custom" and not api_key:
@@ -257,7 +272,7 @@ def _complete_gemini(
             {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
             for m in messages
         ],
-        "generationConfig": {"maxOutputTokens": max_tokens},
+        "generationConfig": {"maxOutputTokens": max_tokens + GEMINI_THINKING_HEADROOM},
     }
     try:
         response = httpx.post(
@@ -273,7 +288,7 @@ def _complete_gemini(
     try:
         body = response.json()
         parts = body["candidates"][0]["content"]["parts"]
-        text = "".join(p.get("text", "") for p in parts).strip()
+        text = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
     except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise LLMError(f"{label} returned no content (it may have been blocked by safety filters)") from exc
     usage = body.get("usageMetadata") or {}
@@ -437,7 +452,7 @@ def _agent_gemini(config, system, messages, tools, call_tool, max_steps, max_tok
             "systemInstruction": {"parts": [{"text": system}]},
             "contents": contents,
             "tools": [{"functionDeclarations": declarations}],
-            "generationConfig": {"maxOutputTokens": max_tokens},
+            "generationConfig": {"maxOutputTokens": max_tokens + GEMINI_THINKING_HEADROOM},
         }
         try:
             response = httpx.post(
@@ -462,11 +477,14 @@ def _agent_gemini(config, system, messages, tools, call_tool, max_steps, max_tok
         result.output_tokens += int(usage.get("candidatesTokenCount") or 0)
         calls = [p["functionCall"] for p in parts if "functionCall" in p]
         if not calls:
-            result.text = "".join(p.get("text", "") for p in parts).strip()
+            result.text = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
             return
         contents.append({"role": "model", "parts": parts})
         responses = []
         for call in calls:
             output, is_error = call_tool(call.get("name", ""), call.get("args") or {})
-            responses.append({"functionResponse": {"name": call.get("name", ""), "response": {"result": output, "is_error": is_error}}})
+            function_response: dict[str, Any] = {"name": call.get("name", ""), "response": {"result": output, "is_error": is_error}}
+            if call.get("id"):
+                function_response["id"] = call["id"]
+            responses.append({"functionResponse": function_response})
         contents.append({"role": "user", "parts": responses})
