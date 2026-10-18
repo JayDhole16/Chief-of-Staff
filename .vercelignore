@@ -1,0 +1,15 @@
+# API deployment (repo root). The frontend is a separate Vercel project in frontend/.
+frontend
+bench
+docs
+tests
+scripts
+t00.6-portable
+tmp
+data
+*.pdf
+*.md
+.github
+.env
+.env.*
+!.env.example

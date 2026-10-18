@@ -44,3 +44,5 @@ skills-lock.json
 
 # Local application database and encryption key
 /data/
+.vercel
+.env*.local

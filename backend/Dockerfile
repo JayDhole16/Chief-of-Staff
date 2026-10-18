@@ -13,4 +13,5 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 
 EXPOSE 8080
 
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Hosting platforms (Railway, Render, Fly) inject PORT; Compose uses the 8080 default.
+CMD ["sh", "-c", "exec uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8080} --proxy-headers --forwarded-allow-ips=*"]

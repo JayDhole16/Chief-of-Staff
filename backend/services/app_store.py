@@ -330,7 +330,11 @@ class AppStore:
     # ------------------------------------------------------------------
     def _connect(self) -> Any:
         if self.is_postgres:
-            return psycopg.connect(self.database, autocommit=True, row_factory=dict_row, connect_timeout=10)
+            # prepare_threshold=None: no server-side prepared statements, which transaction
+            # poolers (PgBouncer, Neon, Supabase) cannot share between clients.
+            return psycopg.connect(
+                self.database, autocommit=True, row_factory=dict_row, connect_timeout=10, prepare_threshold=None
+            )
         conn = sqlite3.connect(self.database, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")

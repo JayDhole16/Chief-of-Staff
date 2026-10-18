@@ -18,6 +18,30 @@ is sent until you approve that exact text.
   grounding of amounts), hash-bound approvals with 409 on stale or tampered drafts,
   and a per-user kill switch that pauses all drafting and sending.
 
+## Live deployment (Vercel)
+
+| Part | URL | Vercel project |
+|---|---|---|
+| Web app | https://chief-of-staff-app-kappa.vercel.app | `chief-of-staff-app` (from `frontend/`) |
+| API | https://chief-of-staff-eight-sigma.vercel.app ([/docs](https://chief-of-staff-eight-sigma.vercel.app/docs)) | `chief-of-staff` (repo root, FastAPI function) |
+| Database | Neon Postgres (free, via the Vercel Marketplace) | attached to `chief-of-staff` |
+
+The browser calls the API directly (`VITE_API_BASE`), and the API allows that origin
+through `CORS_ORIGINS`. Production environment variables:
+
+- **API (`chief-of-staff`):** `DATABASE_URL` (set by Neon), `APP_ENCRYPTION_KEY`,
+  `CORS_ORIGINS` and `APP_BASE_URL` (the web app URL), `PUBLIC_API_URL` (the API URL),
+  `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+- **Web (`chief-of-staff-app`):** `VITE_API_BASE=https://chief-of-staff-eight-sigma.vercel.app/api`
+
+Redeploy after changes: `vercel deploy --prod` from the repo root (API) and from
+`frontend/` (web). Config lives in `vercel.json`, `.vercelignore`,
+`frontend/vercel.json` and `[tool.vercel]` in `pyproject.toml`; the API function may
+run for up to 300 s, which covers slow AI calls.
+
+For Google sign-in on the live site, also register this redirect URI in Google Cloud:
+`https://chief-of-staff-eight-sigma.vercel.app/api/integrations/google/callback`
+
 ## Run it with Docker (PostgreSQL)
 
 ```bash

@@ -41,6 +41,10 @@ dev = [
     "pip-audit>=2.7.0",
 ]
 
+# Vercel deploys the API as one Python function from this entrypoint.
+[tool.vercel]
+entrypoint = "backend.main:app"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["backend*", "tests*"]
