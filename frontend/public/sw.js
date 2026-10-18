@@ -3,7 +3,7 @@
  * DOES NOT cache API responses (keep them fresh).
  */
 
-const CACHE_NAME = 'chief-of-staff-v2'
+const CACHE_NAME = 'chief-of-staff-v3'
 const STATIC_ASSETS = [
   '/',
   '/index.html',

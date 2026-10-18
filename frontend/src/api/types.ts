@@ -1,333 +1,283 @@
 /**
- * Typed API client: request/response types and error models.
+ * Typed API contract shared with backend/api/app.py.
  * Pure types, no I/O.
  */
 
-export type APIErrorCode = 401 | 403 | 409 | 422 | 500 | 502 | 503 | 'NETWORK' | 'TIMEOUT'
+export type APIErrorCode = 401 | 403 | 404 | 409 | 422 | 423 | 500 | 502 | 503 | 'NETWORK' | 'TIMEOUT'
 
-export interface APIError {
-  code: APIErrorCode
-  message: string
-  details?: Record<string, unknown>
-}
-
-export interface APIResponse<T> {
-  data?: T
-  error?: APIError
-}
-
-// Auth & Profile
+// ---------------------------------------------------------------- auth & profile
 export interface LoginRequest {
   email: string
   password: string
 }
 
-export interface LoginUser {
-  id: string
-  email: string
+export interface RegisterRequest {
   name: string
-  role?: string
+  email: string
+  password: string
   business_name?: string
-  timezone?: string
 }
 
-export interface LoginResponse {
-  session_id: string
-  user: LoginUser
-}
-
-export interface SessionResponse {
-  session_id: string
-  user: LoginUser
-}
-
-export interface FounderProfile {
+export interface User {
   id: string
-  name: string
   email: string
+  name: string
   role: string
   business_name: string
   timezone: string
   signature: string
   working_hours: string
-  concise_mode: boolean
-  google_connected: boolean
+  max_discount_pct: number
+  quiet_days_threshold: number
+  active_llm_provider: string | null
   kill_switch_active: boolean
+  kill_switch_reason: string | null
+  created_at: string
 }
 
-export interface ProfileUpdateRequest {
-  name?: string
-  role?: string
-  business_name?: string
-  timezone?: string
-  signature?: string
-  working_hours?: string
-  concise_mode?: boolean
-}
-
-// Chat API
-export interface ChatMessageRequest {
-  message: string
-  session_id?: string
-}
-
-export interface ChatMessageResponse {
-  id: string
+export interface LoginResponse {
   session_id: string
-  role: 'assistant'
-  reply: string
-  timestamp: string
-  intent: string
-  facts_cited: Array<{
-    label: string
-    value: string
-    source: string
-  }>
-  guards_checked: string[]
-  suggested_prompts: string[]
-  action_card?: Record<string, unknown> | null
+  user: User
 }
 
-// Verified Fact & Risk Flag Models
-export interface FactEvidence {
-  key: string
+export type ProfileUpdate = Partial<
+  Pick<
+    User,
+    | 'name'
+    | 'role'
+    | 'business_name'
+    | 'timezone'
+    | 'signature'
+    | 'working_hours'
+    | 'max_discount_pct'
+    | 'quiet_days_threshold'
+  >
+>
+
+// ---------------------------------------------------------------- deals
+export type DealStage = 'lead' | 'qualified' | 'proposal_sent' | 'negotiating' | 'won' | 'lost'
+
+export interface Deal {
+  id: string
+  company: string
+  title: string
+  contact_name: string
+  contact_email: string
+  stage: DealStage
+  value_inr: number
+  notes: string
+  do_not_contact: boolean
+  last_contact_at: string | null
+  created_at: string
+  updated_at: string
+  days_quiet: number | null
+  is_quiet?: boolean
+}
+
+export interface DealInput {
+  company: string
+  title: string
+  contact_name: string
+  contact_email: string
+  stage: DealStage
+  value_inr: number
+  notes: string
+  do_not_contact: boolean
+  last_contact_at?: string | null
+}
+
+export interface DealsResponse {
+  deals: Deal[]
+  count: number
+  open_pipeline_inr: number
+  won_inr: number
+}
+
+export interface SweepResponse {
+  scanned: number
+  threshold_days: number
+  drafted: string[]
+  skipped: Array<{ deal: string; reason: string }>
+}
+
+// ---------------------------------------------------------------- approvals & receipts
+export type ProposalStatus = 'pending' | 'blocked' | 'approved' | 'sent' | 'rejected' | 'expired'
+
+export interface FactUsed {
   label: string
   value: string
   source: string
 }
 
-export interface RiskFlag {
-  code: string
-  severity: 'warning' | 'critical'
-  reason: string
-  customer_claim?: string
-}
-
-// Proposed Actions & Approvals (T09.4)
-export interface ProposedAction {
+export interface Proposal {
   ref: string
-  kind: 'email' | 'calendar'
-  deal_id: string
+  deal_id: string | null
+  kind: string
   deal_title: string
   contact_name: string
   contact_email: string
   subject: string
   rendered_body: string
   rendered_hash: string
-  facts_used: FactEvidence[]
-  risk_flags: RiskFlag[]
   policy_verdict: 'ALLOW' | 'ASK' | 'BLOCK'
   policy_reasons: string[]
+  guards_checked: string[]
+  facts_used: FactUsed[]
+  status: ProposalStatus
   created_at: string
   expires_at: string
-  status: 'pending' | 'approved' | 'rejected' | 'expired' | 'scheduled' | 'executing' | 'cancelled'
-  execute_after?: string
-}
-
-export interface ApprovalDecisionRequest {
-  decision: 'approve' | 'reject'
-  rendered_hash: string
-  rejection_reason?: string
-}
-
-export interface ApprovalDecisionResponse {
-  ref: string
-  status: 'approved' | 'rejected' | 'scheduled'
-  rendered_hash: string
-  execute_after?: string
-  message: string
-}
-
-// Legacy Approval interface (extended for backwards compatibility)
-export interface Approval {
-  id: string
-  ref?: string
-  title: string
-  description: string
-  state: 'pending' | 'approved' | 'rejected'
-  created_at: string
-  expires_at: string
-  proposal?: ProposedAction
+  decided_at: string | null
+  receipt_id: string | null
 }
 
 export interface ApprovalsResponse {
-  approvals: Approval[]
+  approvals: Proposal[]
   count: number
 }
 
-// Action Receipts (T09.5)
-export interface ActionReceipt {
+export interface Receipt {
   receipt_id: string
   action_ref: string
-  action_kind: 'email' | 'calendar'
-  status: 'executed' | 'cancelled' | 'blocked'
-  authority_clause: string
-  recipient_email?: string
-  meeting_time?: string
-  external_id?: string
+  action_kind: string
+  status: 'sent' | 'approved_manual' | 'failed'
+  recipient_email: string | null
+  subject: string | null
   rendered_hash: string
-  checks_passed: string[]
-  facts_used: FactEvidence[]
-  executed_at?: string
-  cancelled_at?: string
-  undo_window_seconds?: number
-  timeline: Array<{
-    timestamp: string
-    event: string
-  }>
+  external_id: string | null
+  detail: string
+  guards_checked: string[]
+  timeline: Array<{ timestamp: string; event: string }>
+  created_at: string
 }
 
-export interface CancelActionResponse {
+export interface DecisionResponse {
   ref: string
-  status: 'cancelled'
-  cancelled_at: string
-  receipt_id: string
+  status: 'approved' | 'sent' | 'rejected'
+  receipt: Receipt | null
   message: string
 }
 
-// Activity Feed (T09.5)
+// ---------------------------------------------------------------- activity & brief
 export interface ActivityEvent {
   id: string
-  timestamp: string
-  type: 'approval' | 'approved' | 'rejected' | 'scheduled' | 'execution' | 'error' | 'proposed' | 'cancelled' | 'blocked'
+  type: string
   title: string
   description: string
-  user_id: string
-  action_ref?: string
-  receipt_id?: string
-  escalation_id?: string
-  rendered_hash?: string
-  execute_after?: string
-  can_undo?: boolean
+  action_ref: string | null
+  receipt_id: string | null
+  deal_id: string | null
+  created_at: string
 }
 
-export interface ActivityFeedResponse {
+export interface ActivityResponse {
   events: ActivityEvent[]
   count: number
 }
 
-export interface OperationsComponent {
-  status: 'ready' | 'degraded' | 'unavailable' | 'not_configured'
-  detail: string
+export interface Brief {
+  generated_at: string
+  deal_count: number
+  open_pipeline_inr: number
+  won_inr: number
+  stage_counts: Partial<Record<DealStage, number>>
+  quiet_deals: Array<{ id: string; company: string; contact_name: string; days_quiet: number | null }>
+  pending_approvals: number
+  emails_sent: number
+  recent_activity: ActivityEvent[]
+  kill_switch_active: boolean
+  ai_provider: string | null
 }
 
-export interface OperationsStatus {
+// ---------------------------------------------------------------- chat
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  provider?: string | null
+  model?: string | null
+  created_at: string
+}
+
+export interface ChatSession {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+  message_count?: number
+}
+
+export interface ChatResponse {
+  session_id: string
+  session_title: string
+  user_message: ChatMessage
+  reply: ChatMessage
+  usage: { input_tokens: number; output_tokens: number }
+}
+
+// ---------------------------------------------------------------- settings
+export interface ProviderKey {
+  provider: string
+  label: string
+  default_model: string
+  default_base_url: string | null
+  key_hint: string
+  docs_url: string | null
+  configured: boolean
+  masked_key: string | null
+  model: string | null
+  base_url: string | null
+  updated_at: string | null
+  last_tested_at: string | null
+  last_test_ok: boolean | null
+  last_test_message: string | null
+}
+
+export interface ApiKeysResponse {
+  active_provider: string | null
+  providers: ProviderKey[]
+}
+
+export interface TestResult {
+  ok: boolean
+  message: string
+  tested_at: string
+}
+
+export interface UsageResponse {
+  by_model: Array<{
+    provider: string
+    model: string
+    requests: number
+    input_tokens: number
+    output_tokens: number
+    last_used_at: string
+  }>
+  total_requests: number
+  total_input_tokens: number
+  total_output_tokens: number
+}
+
+export interface EmailSettings {
+  host: string
+  port: number
+  username: string
+  from_email: string
+  use_ssl: boolean
+  has_password: boolean
+  masked_password: string | null
+  updated_at: string
+  last_tested_at: string | null
+  last_test_ok: boolean | null
+  last_test_message: string | null
+}
+
+export interface EmailSettingsResponse {
+  configured: boolean
+  settings: EmailSettings | null
+}
+
+export interface OpsStatus {
   status: 'ready' | 'degraded'
   checked_at: string
-  data_mode: 'provisional'
-  kill_switch_active: boolean
-  components: Record<string, OperationsComponent>
-  database?: {
-    type?: string
-  }
-}
-
-export interface BriefLink {
-  kind: 'receipt' | 'approval' | 'escalation'
-  reference: string
-  href: string
-}
-
-export interface V1BriefItem {
-  event_id: string
-  timestamp: string
-  title: string
-  summary: string
-  link: BriefLink
-}
-
-export interface V1DailyBrief {
-  generated_at: string
-  items: V1BriefItem[]
-  omitted_unlinked_events: number
-  limitation: string
-}
-export type DailyBrief = V1DailyBrief
-
-
-// Pipeline (T09.5)
-export interface Deal {
-  id: string
-  title: string
-  contact_name?: string
-  contact_email?: string
-  stage: 'lead' | 'negotiation' | 'approved' | 'active' | 'meeting_scheduled' | 'won'
-  value_paise: number
-  created_at: string
-  days_quiet?: number
-  is_quiet?: boolean
-  last_interaction?: string
-}
-
-export interface PipelineResponse {
-  deals: Deal[]
-  count: number
-  total_pipeline_paise?: number
-}
-
-// Settings & Ops (T09.5)
-export interface SystemSettings {
-  founder: {
-    name: string
-    email: string
-    business_name: string
-    timezone: string
-  }
-  google_account: {
-    connected: boolean
-    email: string
-    token_status: 'valid' | 'expiring_soon' | 'expired'
-    expires_at: string
-    scopes: string[]
-  }
-  kill_switch: {
-    active: boolean
-    triggered_at?: string
-    reason?: string
-  }
-}
-
-// Founder Brief (T13.2)
-export interface BriefFactEvidence {
-  key: string
-  label: string
-  value: string
-  source: string
-}
-
-export interface BriefItem {
-  id: string
-  category: 'executed_action' | 'pending_decision' | 'escalation' | 'pipeline_quiet' | 'blocked_action'
-  deal_id?: string
-  deal_title?: string
-  contact_name?: string
-  contact_email?: string
-  summary: string
-  status: string
-  authority_clause?: string
-  evidence_receipt_id?: string
-  evidence_action_ref?: string
-  evidence_facts: BriefFactEvidence[]
-  risk_flags: string[]
-  recommended_followup?: string
-}
-
-export interface BriefMetrics {
-  actions_executed_count: number
-  pending_approvals_count: number
-  escalations_count: number
-  blocked_actions_count: number
-  total_pipeline_value_paise: number
-  estimated_founder_minutes_saved: number
-}
-
-export interface FounderBrief {
-  workspace_id: string
-  generated_at: string
-  headline: string
-  metrics: BriefMetrics
-  items: BriefItem[]
-  narration_text: string
-  is_audio_available: boolean
-  disclaimer: string
+  components: Record<string, { status: 'ready' | 'degraded' | 'unavailable' | 'not_configured'; detail: string }>
 }

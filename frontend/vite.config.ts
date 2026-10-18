@@ -12,7 +12,6 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(configDir, './src'),
-        '@/mocks': path.resolve(configDir, './src/mocks'),
       },
     },
     server: {

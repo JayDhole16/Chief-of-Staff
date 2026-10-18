@@ -1,12 +1,15 @@
 /**
- * Typed API client: single fetch wrapper with error mapping, timeouts, CSRF support.
+ * Typed API client: single fetch wrapper with error mapping, timeouts and session header.
  * No direct fetch calls anywhere else in the codebase.
  */
 
-import type { APIError, APIResponse, APIErrorCode } from './types'
+import type { APIErrorCode } from './types'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
-const API_TIMEOUT_MS = 30000
+const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+const API_TIMEOUT_MS = 120000
+const SESSION_KEY = 'session_id'
+
+export const SESSION_EXPIRED_EVENT = 'cos:session-expired'
 
 export class APIClientError extends Error {
   constructor(public code: APIErrorCode, message: string) {
@@ -16,7 +19,7 @@ export class APIClientError extends Error {
 }
 
 /**
- * Fetch wrapper with typed requests/responses, error mapping, timeout, CSRF header.
+ * Fetch wrapper with typed responses, error mapping and timeout.
  * @throws APIClientError on any failure
  */
 export async function apiCall<T>(
@@ -28,16 +31,12 @@ export async function apiCall<T>(
   } = {}
 ): Promise<T> {
   const url = `${API_BASE}${endpoint}`
-  const method = options.method || 'GET'
-  
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'X-Requested-With': 'XMLHttpRequest', // CSRF token placeholder
+    'X-Requested-With': 'XMLHttpRequest',
     ...options.headers,
   }
-  
-  // Add CSRF header if available in session
-  const sessionId = sessionStorage.getItem('session_id')
+  const sessionId = getSessionId()
   if (sessionId) {
     headers['X-Session-ID'] = sessionId
   }
@@ -46,93 +45,93 @@ export async function apiCall<T>(
   const timeout = controller ? setTimeout(() => controller.abort(), API_TIMEOUT_MS) : null
 
   try {
-    const fetchOptions: RequestInit = {
-      method,
+    const response = await fetch(url, {
+      method: options.method || 'GET',
       headers,
-      body: options.body ? JSON.stringify(options.body) : undefined,
-      credentials: 'include', // Send cookies with requests
-    }
-    let response: Response
-    try {
-      response = await fetch(url, { ...fetchOptions, signal: controller?.signal })
-    } catch (fetchErr) {
-      if (fetchErr instanceof TypeError && fetchErr.message.includes('AbortSignal')) {
-        response = await fetch(url, fetchOptions)
-      } else {
-        throw fetchErr
-      }
-    }
-
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: controller?.signal,
+    })
     if (timeout) clearTimeout(timeout)
 
-
-
-    // Map HTTP status to error code
-    const errorCode = mapStatusToErrorCode(response.status)
-    
     if (!response.ok) {
-      const error = await parseErrorResponse(response)
-      throw new APIClientError(errorCode, error.message || `HTTP ${response.status}`)
+      const message = await parseErrorMessage(response)
+      if (response.status === 401 && sessionId && !endpoint.startsWith('/auth/')) {
+        clearSession()
+        window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT))
+      }
+      throw new APIClientError(mapStatusToErrorCode(response.status), message)
     }
-
-    const data = await response.json()
-    return data as T
+    return (await response.json()) as T
   } catch (error) {
     if (timeout) clearTimeout(timeout)
-
-    if (error instanceof APIClientError) {
-      throw error
-    }
-
-    // Network or abort errors
-    if (error instanceof TypeError) {
-      throw new APIClientError('NETWORK', `Network error: ${error.message}`)
-    }
-
-    // Timeout (AbortError when aborted due to timeout)
+    if (error instanceof APIClientError) throw error
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new APIClientError('TIMEOUT', `Request timeout after ${API_TIMEOUT_MS}ms`)
+      throw new APIClientError('TIMEOUT', `Request timed out after ${API_TIMEOUT_MS / 1000}s`)
     }
-
+    if (error instanceof TypeError) {
+      throw new APIClientError('NETWORK', 'Cannot reach the server. Is the backend running?')
+    }
     throw new APIClientError('NETWORK', `Unknown error: ${String(error)}`)
   }
 }
 
 function mapStatusToErrorCode(status: number): APIErrorCode {
-  if (status === 401) return 401
-  if (status === 403) return 403
-  if (status === 409) return 409
-  if (status === 422) return 422
-  if (status >= 500 && status < 600) return 500
+  if ([401, 403, 404, 409, 422, 423, 502, 503].includes(status)) return status as APIErrorCode
+  if (status >= 500) return 500
   return 'NETWORK'
 }
 
-async function parseErrorResponse(response: Response): Promise<{ message?: string }> {
+async function parseErrorMessage(response: Response): Promise<string> {
   try {
     const data = await response.json()
-    return data
+    if (typeof data?.detail === 'string') return data.detail
+    if (Array.isArray(data?.detail) && data.detail.length > 0) {
+      // FastAPI validation errors: [{loc: [...], msg: "..."}]
+      return data.detail
+        .map((d: { loc?: unknown[]; msg?: string }) => {
+          const field = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : ''
+          return field ? `${String(field).replace(/_/g, ' ')}: ${d.msg}` : d.msg
+        })
+        .join('; ')
+    }
+    if (typeof data?.message === 'string') return data.message
   } catch {
-    return { message: response.statusText }
+    // fall through
+  }
+  return response.statusText || `HTTP ${response.status}`
+}
+
+/** Human-readable message for any thrown error. */
+export function errorMessage(err: unknown): string {
+  if (err instanceof APIClientError) return err.message
+  if (err instanceof Error) return err.message
+  return 'Something went wrong'
+}
+
+export function getSessionId(): string | null {
+  try {
+    return localStorage.getItem(SESSION_KEY)
+  } catch {
+    return null
   }
 }
 
-/**
- * Set session ID in sessionStorage after login.
- */
 export function setSession(sessionId: string): void {
-  sessionStorage.setItem('session_id', sessionId)
+  try {
+    localStorage.setItem(SESSION_KEY, sessionId)
+  } catch {
+    // storage unavailable (private mode); session lasts for this page only
+  }
 }
 
-/**
- * Clear session on logout.
- */
 export function clearSession(): void {
-  sessionStorage.removeItem('session_id')
+  try {
+    localStorage.removeItem(SESSION_KEY)
+  } catch {
+    // ignore
+  }
 }
 
-/**
- * Check if session is active.
- */
 export function hasSession(): boolean {
-  return sessionStorage.getItem('session_id') !== null
+  return getSessionId() !== null
 }

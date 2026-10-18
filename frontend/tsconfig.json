@@ -16,8 +16,7 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@/mocks/*": ["src/mocks/*"]
+      "@/*": ["src/*"]
     }
   },
   "include": ["src"]

@@ -1,96 +1,43 @@
-/**
- * Tests for API client: error mapping, CSRF headers, timeouts.
- */
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { apiCall, APIClientError, SESSION_EXPIRED_EVENT, setSession, hasSession } from '../api/client'
+import { mockFetch } from './fetchMock'
 
-import { describe, it, expect, beforeEach } from 'vitest'
-import { apiCall, APIClientError, setSession, hasSession } from '../api/client'
+afterEach(() => vi.unstubAllGlobals())
 
-describe('API Client', () => {
-  beforeEach(() => {
-    sessionStorage.clear()
+describe('apiCall', () => {
+  it('sends the session header when signed in', async () => {
+    setSession('tok_abc')
+    const { calls } = mockFetch({ 'GET /deals': () => [200, { deals: [] }] })
+    await apiCall('/deals')
+    expect(calls[0].headers['X-Session-ID']).toBe('tok_abc')
   })
 
-  describe('error mapping', () => {
-    it('maps 401 to unauthorized', async () => {
-      sessionStorage.removeItem('session_id')
-
-      try {
-        await apiCall('/session', { method: 'GET' })
-        expect.fail('should throw')
-      } catch (err) {
-        expect(err).toBeInstanceOf(APIClientError)
-        expect((err as APIClientError).code).toBe(401)
-      }
-    })
-
-    it('maps 422 to validation error', async () => {
-      try {
-        await apiCall('/auth/login', {
-          method: 'POST',
-          body: { email: '', password: '' },
-        })
-        expect.fail('should throw')
-      } catch (err) {
-        expect(err).toBeInstanceOf(APIClientError)
-        expect((err as APIClientError).code).toBe(422)
-      }
+  it('surfaces FastAPI detail messages', async () => {
+    mockFetch({ 'POST /chat': () => [409, { detail: 'No AI provider configured.' }] })
+    await expect(apiCall('/chat', { method: 'POST', body: {} })).rejects.toMatchObject({
+      code: 409,
+      message: 'No AI provider configured.',
     })
   })
 
-  describe('session management', () => {
-    it('sends session ID in CSRF header', async () => {
-      setSession('test_session_123')
-
-      // This should succeed with session header
-      const response = await apiCall<{ session_id: string }>('/session', {
-        method: 'GET',
-      })
-
-      expect(response.session_id).toBe('test_session_123')
-    })
-
-    it('checks session state', () => {
-      expect(hasSession()).toBe(false)
-
-      setSession('test_session_456')
-      expect(hasSession()).toBe(true)
-    })
+  it('formats validation error lists', async () => {
+    mockFetch({ 'POST /deals': () => [422, { detail: [{ loc: ['body', 'contact_email'], msg: 'invalid' }] }] })
+    await expect(apiCall('/deals', { method: 'POST', body: {} })).rejects.toThrow('contact email: invalid')
   })
 
-  describe('login flow', () => {
-    it('successful login', async () => {
-      const response = await apiCall<{
-        session_id: string
-        user: { id: string; email: string; name: string }
-      }>('/auth/login', {
-        method: 'POST',
-        body: { email: 'test@example.com', password: 'password123' },
-      })
-
-      expect(response.session_id).toBeDefined()
-      expect(response.user.email).toBe('test@example.com')
-    })
-
-    it('rejects short password', async () => {
-      try {
-        await apiCall('/auth/login', {
-          method: 'POST',
-          body: { email: 'test@example.com', password: 'short' },
-        })
-        expect.fail('should throw')
-      } catch (err) {
-        expect(err).toBeInstanceOf(APIClientError)
-        expect((err as APIClientError).code).toBe(422)
-      }
-    })
+  it('clears the session and emits an event on 401', async () => {
+    setSession('tok_old')
+    const listener = vi.fn()
+    window.addEventListener(SESSION_EXPIRED_EVENT, listener)
+    mockFetch({ 'GET /deals': () => [401, { detail: 'Session expired' }] })
+    await expect(apiCall('/deals')).rejects.toBeInstanceOf(APIClientError)
+    expect(hasSession()).toBe(false)
+    expect(listener).toHaveBeenCalled()
+    window.removeEventListener(SESSION_EXPIRED_EVENT, listener)
   })
 
-  describe('network errors', () => {
-    it('handles network timeout', async () => {
-      // MSW can't simulate timeout easily, so test the error class
-      const error = new APIClientError('TIMEOUT', 'Request timed out')
-      expect(error.code).toBe('TIMEOUT')
-      expect(error.message).toBe('Request timed out')
-    })
+  it('maps network failures', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+    await expect(apiCall('/deals')).rejects.toMatchObject({ code: 'NETWORK' })
   })
 })
