@@ -38,8 +38,19 @@ from backend.contracts.read_api import (
     ReceiptStatus,
     ReceiptTimelineItem,
 )
+from backend.contracts.settings import (
+    EvolusConfigUpdate,
+    EvolusSettingsView,
+    GoogleConnectionUpdate,
+    GoogleSettingsView,
+    IntegrationsSection,
+    IntegrationTestResult,
+    ModelConfigUpdate,
+    ModelSettingsView,
+)
 from backend.facts.inr_formatter import format_inr
 from backend.guards.definitions import list_guards
+from backend.integrations import Adapters, build_adapters
 from backend.services.brief import (
     FounderBriefResponse,
     FounderBriefService,
@@ -52,6 +63,17 @@ from backend.services.executor import (
 from backend.services.inbound import (
     InboundEmailMessage,
     InboundProcessingPipeline,
+)
+from backend.services.settings_store import (
+    get_evolus_view,
+    get_google_view,
+    get_integrations_section,
+    get_model_view,
+    load_settings,
+    record_evolus_test_result,
+    record_model_test_result,
+    update_evolus_settings,
+    update_model_settings,
 )
 from backend.services.sweep import (
     QuietSweepService,
@@ -191,6 +213,7 @@ class SystemSettingsSchema(CompatBaseModel):
     founder: dict[str, Any]
     google_account: dict[str, Any]
     kill_switch: dict[str, Any]
+    integrations: IntegrationsSection
 
 
 class KillSwitchRequest(CompatBaseModel):
@@ -303,6 +326,10 @@ class ApplicationState:
         self.google_connected: bool = True
         self.google_email: str = "meera@agency.in"
         self.google_token_status: str = "valid"
+        self.google_last_tested_at: datetime | None = None
+        self.google_last_test_result: Literal["ok", "failed"] | None = None
+        self.google_last_test_message: str | None = None
+        self.adapters: Adapters = build_adapters()
 
         # Initialize pipelines & services
         self.gmail_adapter = FakeGmailAdapter()
@@ -1270,10 +1297,11 @@ def create_app() -> FastAPI:
         )
 
     # -----------------------------------------------------------------------
-    # Settings & Kill Switch (T09.5)
+    # Settings & Kill Switch (T09.5) & Integrations
     # -----------------------------------------------------------------------
     @app.get("/api/settings", response_model=SystemSettingsSchema)
     def get_settings():
+        store = load_settings()
         return SystemSettingsSchema(
             founder={
                 "name": state.founder_profile.get("name", "Meera Nair"),
@@ -1293,7 +1321,86 @@ def create_app() -> FastAPI:
                 "triggered_at": datetime.now(timezone.utc).isoformat() if state.kill_switch_active else None,
                 "reason": state.kill_switch_reason,
             },
+            integrations=get_integrations_section(
+                store=store,
+                google_connected=state.google_connected,
+                google_tested_at=state.google_last_tested_at,
+                google_test_result=state.google_last_test_result,
+                google_test_message=state.google_last_test_message,
+            ),
         )
+
+    @app.put("/api/integrations/evolus", response_model=EvolusSettingsView)
+    def update_evolus_integration(req: EvolusConfigUpdate):
+        store = update_evolus_settings(req)
+        return get_evolus_view(store)
+
+    @app.put("/api/integrations/model", response_model=ModelSettingsView)
+    def update_model_integration(req: ModelConfigUpdate):
+        store = update_model_settings(req)
+        return get_model_view(store)
+
+    @app.put("/api/integrations/google", response_model=GoogleSettingsView)
+    def update_google_integration(req: GoogleConnectionUpdate):
+        if req.action == "connect":
+            state.google_connected = True
+        elif req.action == "disconnect":
+            state.google_connected = False
+        return get_google_view(
+            connected=state.google_connected,
+            last_tested_at=state.google_last_tested_at,
+            last_test_result=state.google_last_test_result,
+            last_test_message=state.google_last_test_message,
+        )
+
+    @app.post("/api/integrations/{name}/test", response_model=IntegrationTestResult)
+    def test_integration(name: str):
+        if name == "evolus":
+            store = load_settings()
+            if not (store.evolus.api_key and store.evolus.api_key.strip()):
+                raise HTTPException(status_code=409, detail="evolus is not configured")
+            result = state.adapters.evolus.test_connection(api_key=store.evolus.api_key)
+            now = datetime.now(timezone.utc)
+            record_evolus_test_result(ok=result.ok, message=result.message, tested_at=now)
+            return IntegrationTestResult(
+                name="evolus",
+                ok=result.ok,
+                message=result.message,
+                tested_at=now,
+            )
+        elif name == "model":
+            store = load_settings()
+            if not (store.model.base_url and store.model.base_url.strip()):
+                raise HTTPException(status_code=409, detail="model is not configured")
+            result = state.adapters.model.test_connection(
+                base_url=store.model.base_url,
+                model_name=store.model.model_name,
+                api_key=store.model.api_key,
+            )
+            now = datetime.now(timezone.utc)
+            record_model_test_result(ok=result.ok, message=result.message, tested_at=now)
+            return IntegrationTestResult(
+                name="model",
+                ok=result.ok,
+                message=result.message,
+                tested_at=now,
+            )
+        elif name == "google":
+            if not state.google_connected:
+                raise HTTPException(status_code=409, detail="google is not connected")
+            result = state.adapters.google.test_connection()
+            now = datetime.now(timezone.utc)
+            state.google_last_tested_at = now
+            state.google_last_test_result = "ok" if result.ok else "failed"
+            state.google_last_test_message = result.message
+            return IntegrationTestResult(
+                name="google",
+                ok=result.ok,
+                message=result.message,
+                tested_at=now,
+            )
+        else:
+            raise HTTPException(status_code=404, detail=f"Integration '{name}' not found")
 
     @app.post("/api/settings/kill-switch")
     def toggle_kill_switch(req: KillSwitchRequest):

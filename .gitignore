@@ -8,6 +8,9 @@ venv/
 .env.*
 !.env.example
 !.env.*.example
+/settings.local.json
+settings.local.json
+!.settings.example.json
 .pytest_cache/
 dist/
 build/
