@@ -410,7 +410,20 @@ def create_app(
     def auth_response(user: dict[str, Any]) -> dict[str, Any]:
         return {"session_id": store.create_session(user["id"]), "user": user}
 
-    # ---------------------------------------------------------------- health
+    # ---------------------------------------------------------------- root & health
+    @app.get("/", include_in_schema=False, response_model=None)
+    def root(accept: str | None = Header(default=None)) -> RedirectResponse | dict[str, str]:
+        """People who open the API URL in a browser land on the web app; clients get links."""
+        web_app = os.getenv("APP_BASE_URL", "").strip().rstrip("/")
+        if web_app and "text/html" in (accept or ""):
+            return RedirectResponse(web_app, status_code=307)
+        return {
+            "service": "Chief of Staff API",
+            "web_app": web_app or "not configured",
+            "docs": "/docs",
+            "health": "/healthz",
+        }
+
     @app.get("/healthz")
     @app.get("/api/healthz")
     def healthz() -> dict[str, str]:

@@ -448,3 +448,11 @@ def test_health_endpoints(client):
     assert client.get("/healthz").json() == {"status": "ok"}
     assert client.get("/api/healthz").status_code == 200
     assert client.get("/readyz").json() == {"status": "ready"}
+
+
+def test_root_redirects_browsers_to_web_app_and_describes_api(client, monkeypatch):
+    monkeypatch.setenv("APP_BASE_URL", "https://web.example")
+    browser = client.get("/", headers={"Accept": "text/html,application/xhtml+xml"}, follow_redirects=False)
+    assert browser.status_code == 307 and browser.headers["location"] == "https://web.example"
+    api = client.get("/", headers={"Accept": "application/json"})
+    assert api.status_code == 200 and api.json()["web_app"] == "https://web.example" and api.json()["docs"] == "/docs"
