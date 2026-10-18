@@ -4,7 +4,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react'
 import { apiCall, errorMessage } from '../api/client'
-import type { Brief, EmailSettingsResponse, SweepResponse } from '../api/types'
+import type { Brief, EmailSettingsResponse, GoogleStatus, SweepResponse } from '../api/types'
 import type { DashboardContext } from '../pages/DashboardPage'
 import { EmptyPanel, PageHeader, Spinner, StatCard } from '../components/ui'
 import { QuickKeySetup } from '../components/QuickKeySetup'
@@ -18,10 +18,14 @@ export function HomeView({ ctx }: { ctx: DashboardContext }): JSX.Element {
 
   const load = useCallback(() => {
     setError(null)
-    Promise.all([apiCall<Brief>('/brief'), apiCall<EmailSettingsResponse>('/settings/email')])
-      .then(([b, email]) => {
+    Promise.all([
+      apiCall<Brief>('/brief'),
+      apiCall<EmailSettingsResponse>('/settings/email'),
+      apiCall<GoogleStatus>('/integrations/google').catch(() => null),
+    ])
+      .then(([b, email, googleStatus]) => {
         setBrief(b)
-        setEmailConfigured(email.configured)
+        setEmailConfigured(email.configured || Boolean(googleStatus?.connected))
       })
       .catch((err) => setError(errorMessage(err)))
   }, [])
@@ -50,7 +54,7 @@ export function HomeView({ ctx }: { ctx: DashboardContext }): JSX.Element {
   const steps = brief
     ? [
         { done: brief.deal_count > 0, label: 'Add your first deal', action: () => ctx.navigate('deals') },
-        { done: emailConfigured, label: 'Connect your email (SMTP) to send approved follow-ups', action: () => ctx.navigate('keys') },
+        { done: emailConfigured, label: 'Connect Google (Gmail & Calendar) or SMTP to send follow-ups', action: () => ctx.navigate('keys') },
       ]
     : []
   const setupDone = steps.every((s) => s.done)

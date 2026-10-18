@@ -8,6 +8,7 @@ import type { Deal, DealInput, DealsResponse, DealStage, Proposal, SweepResponse
 import type { DashboardContext } from '../pages/DashboardPage'
 import { PlusIcon, SparkIcon, TrashIcon } from '../components/Icons'
 import { EmptyPanel, Modal, PageHeader, Spinner, StatCard } from '../components/ui'
+import { ScheduleMeetingModal } from '../components/ScheduleMeetingModal'
 import { formatRupees, STAGE_LABELS, timeAgo } from '../utils/formatters'
 
 const STAGES: DealStage[] = ['lead', 'qualified', 'proposal_sent', 'negotiating', 'won', 'lost']
@@ -39,6 +40,7 @@ export function DealsView({ ctx }: { ctx: DashboardContext }): JSX.Element {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [drafting, setDrafting] = useState<Deal | null>(null)
+  const [scheduling, setScheduling] = useState<Deal | null>(null)
   const [instructions, setInstructions] = useState('')
   const [draftBusy, setDraftBusy] = useState(false)
   const [sweeping, setSweeping] = useState(false)
@@ -267,6 +269,15 @@ export function DealsView({ ctx }: { ctx: DashboardContext }): JSX.Element {
                           >
                             <SparkIcon size={13} /> Draft follow-up
                           </button>
+                          <button
+                            type="button"
+                            className="cos-btn cos-btn-ghost cos-btn-sm"
+                            onClick={() => setScheduling(d)}
+                            disabled={d.do_not_contact || !d.contact_email}
+                            title={!d.contact_email ? 'Add a contact email first' : 'Book a Google Calendar meeting'}
+                          >
+                            Schedule meeting
+                          </button>
                           <button type="button" className="cos-btn cos-btn-ghost cos-btn-sm" onClick={() => openEdit(d)}>
                             Edit
                           </button>
@@ -351,6 +362,28 @@ export function DealsView({ ctx }: { ctx: DashboardContext }): JSX.Element {
             </div>
           </form>
         </Modal>
+      )}
+
+      {scheduling && (
+        <ScheduleMeetingModal
+          deal={scheduling}
+          onClose={() => setScheduling(null)}
+          onConnectGoogle={() => {
+            setScheduling(null)
+            ctx.navigate('keys')
+          }}
+          onCreated={(proposal) => {
+            setScheduling(null)
+            ctx.notify(
+              proposal.policy_verdict === 'ALLOW'
+                ? `Meeting with ${proposal.contact_name} ready to approve`
+                : `Meeting proposed. Review the findings in Approvals.`,
+              proposal.status === 'blocked' ? 'error' : 'ok'
+            )
+            ctx.refreshApprovals()
+            ctx.navigate('approvals')
+          }}
+        />
       )}
 
       {drafting && (

@@ -112,6 +112,7 @@ export function VerdictBadge({ verdict }: { verdict: string }): JSX.Element {
 const STATUS_CLASS: Record<string, string> = {
   ready: 'cos-badge-green',
   sent: 'cos-badge-green',
+  booked: 'cos-badge-green',
   approved: 'cos-badge-green',
   pending: 'cos-badge-amber',
   degraded: 'cos-badge-amber',

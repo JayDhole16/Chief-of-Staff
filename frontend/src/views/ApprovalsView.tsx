@@ -65,6 +65,14 @@ export function ApprovalsView({ ctx }: { ctx: DashboardContext }): JSX.Element {
   )
 }
 
+function formatMeetingTime(startIso: string, endIso: string): string {
+  const start = new Date(startIso)
+  const end = new Date(endIso)
+  const day = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(start)
+  const time = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
+  return `${day}, ${time.format(start)} – ${time.format(end)}`
+}
+
 function ProposalCard({ proposal, ctx }: { proposal: Proposal; ctx: DashboardContext }): JSX.Element {
   const [current, setCurrent] = useState(proposal)
   const [editing, setEditing] = useState(false)
@@ -74,6 +82,8 @@ function ProposalCard({ proposal, ctx }: { proposal: Proposal; ctx: DashboardCon
   const [result, setResult] = useState<DecisionResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const actionable = current.status === 'pending' || current.status === 'blocked'
+  const isMeeting = current.kind === 'calendar'
+  const meeting = isMeeting ? current.payload : null
 
   useEffect(() => {
     setCurrent(proposal)
@@ -111,8 +121,14 @@ function ProposalCard({ proposal, ctx }: { proposal: Proposal; ctx: DashboardCon
         body: { decision, rendered_hash: current.rendered_hash, rejection_reason },
       })
       setResult(res)
-      setCurrent({ ...current, status: res.status === 'sent' ? 'sent' : res.status })
-      ctx.notify(res.status === 'sent' ? `Email sent to ${current.contact_name}` : res.status === 'approved' ? 'Approved. Copy the draft and send it yourself.' : 'Draft rejected')
+      setCurrent({ ...current, status: res.status })
+      const messages: Record<string, string> = {
+        sent: `Email sent to ${current.contact_name}`,
+        booked: `Meeting booked with ${current.contact_name}. Invite sent.`,
+        approved: 'Approved. Copy the draft and send it yourself.',
+        rejected: isMeeting ? 'Meeting proposal rejected' : 'Draft rejected',
+      }
+      ctx.notify(messages[res.status] ?? res.message)
       ctx.refreshApprovals()
     } catch (err) {
       setError(errorMessage(err))
@@ -135,7 +151,8 @@ function ProposalCard({ proposal, ctx }: { proposal: Proposal; ctx: DashboardCon
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 800, color: '#FFFFFF' }}>To {current.contact_name}</span>
+            {isMeeting && <span className="cos-badge cos-badge-green">Meeting</span>}
+            <span style={{ fontWeight: 800, color: '#FFFFFF' }}>{isMeeting ? 'With' : 'To'} {current.contact_name}</span>
             <span className="cos-muted" style={{ fontSize: '0.8rem' }}>&lt;{current.contact_email}&gt;</span>
             <VerdictBadge verdict={current.policy_verdict} />
             <StatusBadge status={current.status} />
@@ -154,7 +171,15 @@ function ProposalCard({ proposal, ctx }: { proposal: Proposal; ctx: DashboardCon
         </div>
       ) : (
         <div style={{ backgroundColor: 'var(--bg-console)', border: '1px solid var(--border-hairline)', borderRadius: '10px', padding: '0.9rem 1rem' }}>
-          <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#FFFFFF', marginBottom: '0.6rem' }}>Subject: {current.subject}</div>
+          <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#FFFFFF', marginBottom: '0.6rem' }}>
+            {isMeeting ? current.subject : `Subject: ${current.subject}`}
+          </div>
+          {meeting && (
+            <div style={{ fontSize: '0.82rem', color: 'var(--emerald-glow)', marginBottom: '0.6rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <span>📅 {formatMeetingTime(meeting.start_utc, meeting.end_utc)}</span>
+              <span className="cos-muted">{meeting.duration_minutes} min · {meeting.with_meet ? 'Google Meet' : 'no video link'} · organizer {meeting.organizer}</span>
+            </div>
+          )}
           <div style={{ fontSize: '0.84rem', lineHeight: 1.6, whiteSpace: 'pre-wrap', color: 'var(--text-main)' }}>{current.rendered_body}</div>
         </div>
       )}
@@ -200,8 +225,8 @@ function ProposalCard({ proposal, ctx }: { proposal: Proposal; ctx: DashboardCon
             <button type="button" className="cos-btn cos-btn-danger cos-btn-sm" onClick={() => decide('reject')} disabled={busy}>
               Reject
             </button>
-            <button type="button" className="cos-btn cos-btn-primary cos-btn-sm" onClick={() => decide('approve')} disabled={busy || current.status === 'blocked'} title={current.status === 'blocked' ? 'Edit the draft to clear the blocking guards' : 'Approve and send this exact text'}>
-              {busy ? 'Working...' : 'Approve & send'}
+            <button type="button" className="cos-btn cos-btn-primary cos-btn-sm" onClick={() => decide('approve')} disabled={busy || current.status === 'blocked'} title={current.status === 'blocked' ? 'Edit the draft to clear the blocking guards' : isMeeting ? 'Create the event and send the invite' : 'Approve and send this exact text'}>
+              {busy ? 'Working...' : isMeeting ? 'Approve & book' : 'Approve & send'}
             </button>
           </>
         )}

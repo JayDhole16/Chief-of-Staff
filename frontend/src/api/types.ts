@@ -101,7 +101,25 @@ export interface SweepResponse {
 }
 
 // ---------------------------------------------------------------- approvals & receipts
-export type ProposalStatus = 'pending' | 'blocked' | 'approved' | 'sent' | 'rejected' | 'expired'
+export type ProposalStatus = 'pending' | 'blocked' | 'approved' | 'sent' | 'booked' | 'rejected' | 'expired'
+
+export interface MeetingPayload {
+  start_utc: string
+  end_utc: string
+  duration_minutes: number
+  timezone: string
+  with_meet: boolean
+  organizer: string
+}
+
+export interface MeetingRequest {
+  title: string
+  start_utc: string
+  duration_minutes: number
+  agenda: string
+  timezone: string
+  with_meet: boolean
+}
 
 export interface FactUsed {
   label: string
@@ -127,6 +145,7 @@ export interface Proposal {
   created_at: string
   expires_at: string
   decided_at: string | null
+  payload: MeetingPayload | null
   receipt_id: string | null
 }
 
@@ -139,7 +158,7 @@ export interface Receipt {
   receipt_id: string
   action_ref: string
   action_kind: string
-  status: 'sent' | 'approved_manual' | 'failed'
+  status: 'sent' | 'booked' | 'approved_manual' | 'failed'
   recipient_email: string | null
   subject: string | null
   rendered_hash: string
@@ -152,7 +171,7 @@ export interface Receipt {
 
 export interface DecisionResponse {
   ref: string
-  status: 'approved' | 'sent' | 'rejected'
+  status: 'approved' | 'sent' | 'booked' | 'rejected'
   receipt: Receipt | null
   message: string
 }
@@ -274,6 +293,17 @@ export interface EmailSettings {
 export interface EmailSettingsResponse {
   configured: boolean
   settings: EmailSettings | null
+}
+
+export interface GoogleStatus {
+  configured: boolean
+  connected: boolean
+  email: string | null
+  connected_at: string | null
+  last_error: string | null
+  can_send_email: boolean
+  can_manage_calendar: boolean
+  redirect_uri: string | null
 }
 
 export interface OpsStatus {

@@ -79,6 +79,18 @@ export function DashboardPage({ user, onUserChange, onLogout }: DashboardPagePro
     if (toastTimer.current) clearTimeout(toastTimer.current)
   }, [])
 
+  // Returning from Google's consent screen: /?google=connected|partial|error&message=...
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const result = params.get('google')
+    if (!result) return
+    const message = params.get('message')
+    if (result === 'connected') notify(`Google connected${message ? `: ${message}` : ''}`)
+    else notify(message || 'Google connection failed', 'error')
+    setView('keys')
+    window.history.replaceState(null, '', window.location.pathname)
+  }, [notify])
+
   const ctx: DashboardContext = { user, onUserChange, navigate: setView, notify, refreshApprovals }
   const initials = user.name
     .split(/\s+/)

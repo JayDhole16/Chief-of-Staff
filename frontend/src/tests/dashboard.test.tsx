@@ -47,7 +47,45 @@ function baseRoutes(): Record<string, Handler> {
     'GET /settings/usage': () => [200, { by_model: [], total_requests: 0, total_input_tokens: 0, total_output_tokens: 0 }],
     'GET /deals': () => [200, { deals: [], count: 0, open_pipeline_inr: 0, won_inr: 0 }],
     'GET /chat/sessions': () => [200, { sessions: [] }],
+    'GET /integrations/google': () => [200, GOOGLE_DISCONNECTED],
   }
+}
+
+const GOOGLE_DISCONNECTED = {
+  configured: true,
+  connected: false,
+  email: null,
+  connected_at: null,
+  last_error: null,
+  can_send_email: false,
+  can_manage_calendar: false,
+  redirect_uri: 'http://localhost:5173/api/integrations/google/callback',
+}
+
+const GOOGLE_CONNECTED = {
+  ...GOOGLE_DISCONNECTED,
+  connected: true,
+  email: 'jay@gmail.com',
+  connected_at: '2026-10-18T00:00:00Z',
+  can_send_email: true,
+  can_manage_calendar: true,
+}
+
+const DEAL = {
+  id: 'D-1',
+  company: 'Acme',
+  title: 'Automation',
+  contact_name: 'Asha',
+  contact_email: 'asha@acme.example',
+  stage: 'negotiating',
+  value_inr: 250000,
+  notes: '',
+  do_not_contact: false,
+  last_contact_at: '2026-10-10T00:00:00Z',
+  created_at: '2026-10-01T00:00:00Z',
+  updated_at: '2026-10-10T00:00:00Z',
+  days_quiet: 8,
+  is_quiet: true,
 }
 
 describe('DashboardPage', () => {
@@ -120,6 +158,48 @@ describe('DashboardPage', () => {
     await waitFor(() =>
       expect(onUserChange).toHaveBeenCalledWith(expect.objectContaining({ active_llm_provider: 'anthropic' }))
     )
+  })
+
+  it('starts Google OAuth from the API Keys page', async () => {
+    const assign = vi.fn()
+    const original = window.location
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...original, assign, search: '' } })
+    try {
+      mockFetch({
+        ...baseRoutes(),
+        'POST /integrations/google/connect': () => [200, { auth_url: 'https://accounts.google.com/o/oauth2/v2/auth?state=abc' }],
+      })
+      render(<DashboardPage user={TEST_USER} onUserChange={vi.fn()} onLogout={vi.fn()} />)
+      await userEvent.click(screen.getByRole('button', { name: 'API Keys' }))
+      await userEvent.click(await screen.findByRole('button', { name: /Connect Google account/ }))
+      await waitFor(() => expect(assign).toHaveBeenCalledWith('https://accounts.google.com/o/oauth2/v2/auth?state=abc'))
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: original })
+    }
+  })
+
+  it('proposes a Google Calendar meeting from a deal', async () => {
+    const { calls } = mockFetch({
+      ...baseRoutes(),
+      'GET /deals': () => [200, { deals: [DEAL], count: 1, open_pipeline_inr: 250000, won_inr: 0 }],
+      'GET /integrations/google': () => [200, GOOGLE_CONNECTED],
+      'POST /deals/D-1/meeting': () => [201, { ref: 'PA-1', contact_name: 'Asha', policy_verdict: 'ALLOW', status: 'pending' }],
+    })
+    render(<DashboardPage user={TEST_USER} onUserChange={vi.fn()} onLogout={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Deals' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Schedule meeting' }))
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Propose meeting' })).toBeEnabled())
+    await userEvent.selectOptions(within(dialog).getByLabelText('Duration'), '45')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Propose meeting' }))
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/deals/D-1/meeting'))).toBe(true))
+    const post = calls.find((c) => c.method === 'POST')!
+    const body = post.body as { start_utc: string; duration_minutes: number; with_meet: boolean; timezone: string }
+    expect(body.duration_minutes).toBe(45)
+    expect(body.with_meet).toBe(true)
+    expect(new Date(body.start_utc).getTime()).toBeGreaterThan(Date.now())
+    expect(body.timezone).toBeTruthy()
   })
 
   it('tells the user to add a key before chatting', async () => {
