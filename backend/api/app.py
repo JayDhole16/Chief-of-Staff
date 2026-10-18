@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
+import logging
 import os
 import re
 import secrets
@@ -35,10 +37,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
+from backend.api import agent_tools
 from backend.facts.inr_formatter import format_inr
 from backend.guards.definitions import list_guards
 from backend.policy.engine import PolicyInput, evaluate_policy
-from backend.services import google, llm, mailer
+from backend.services import google, llm, mailer, whatsapp
 from backend.services.app_store import (
     AppStore,
     EmailAlreadyRegisteredError,
@@ -76,6 +79,9 @@ class ProfileUpdate(BaseModel):
     working_hours: str | None = Field(default=None, max_length=120)
     max_discount_pct: int | None = Field(default=None, ge=0, le=100)
     quiet_days_threshold: int | None = Field(default=None, ge=1, le=90)
+    sandbox_enabled: bool | None = None
+    sandbox_emails: str | None = Field(default=None, max_length=2000)
+    sandbox_phones: str | None = Field(default=None, max_length=2000)
 
 
 class DealCreate(BaseModel):
@@ -83,6 +89,7 @@ class DealCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     contact_name: str = Field(min_length=1, max_length=120)
     contact_email: str = Field(default="", max_length=254)
+    contact_phone: str = Field(default="", max_length=32)
     stage: DealStage = "lead"
     value_inr: int = Field(default=0, ge=0)
     notes: str = Field(default="", max_length=4000)
@@ -95,6 +102,7 @@ class DealUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     contact_name: str | None = Field(default=None, min_length=1, max_length=120)
     contact_email: str | None = Field(default=None, max_length=254)
+    contact_phone: str | None = Field(default=None, max_length=32)
     stage: DealStage | None = None
     value_inr: int | None = Field(default=None, ge=0)
     notes: str | None = Field(default=None, max_length=4000)
@@ -151,6 +159,17 @@ class KillSwitchRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
 
 
+class AgentToolRequest(BaseModel):
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class WhatsAppSettingsUpdate(BaseModel):
+    provider: Literal["twilio", "meta"]
+    account_id: str = Field(min_length=1, max_length=64, description="Twilio Account SID or Meta Phone Number ID")
+    token: str | None = Field(default=None, max_length=1000, description="Twilio Auth Token or Meta access token")
+    from_number: str = Field(default="", max_length=32, description="Twilio WhatsApp sender (+1...)")
+
+
 class MeetingRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     start_utc: str = Field(description="Meeting start as an ISO-8601 timestamp with offset")
@@ -180,12 +199,24 @@ def sha256_hex(text: str) -> str:
 
 def proposal_content_hash(kind: str, body: str, payload: dict[str, Any] | None, contact_email: str = "") -> str:
     """Hash exactly what will be executed: an email body, or a meeting's text plus time and attendee."""
-    if kind == "calendar" and payload:
+    if kind == "calendar" and payload and "attendees" not in payload:  # meetings proposed from Deals
         return sha256_hex(f"{body}\n--\n{payload['start_utc']}|{payload['end_utc']}|{contact_email}")
+    if kind != "email" and payload is not None:  # agent actions: bind the whole canonical payload
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+        return sha256_hex(f"{body}\n--\n{canonical}|{contact_email}")
     return sha256_hex(body)
 
 
+def split_list(text: str | None) -> list[str]:
+    return [item.strip() for item in re.split(r"[,;\n]", text or "") if item.strip()]
+
+
 def _sanitize_deal_payload(data: dict[str, Any]) -> dict[str, Any]:
+    if data.get("contact_phone"):
+        try:
+            data["contact_phone"] = whatsapp.normalize_phone(data["contact_phone"])
+        except whatsapp.WhatsAppError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     if "contact_email" in data and data["contact_email"]:
         email = data["contact_email"].strip().lower()
         if not EMAIL_RE.match(email):
@@ -214,8 +245,21 @@ _SENSITIVE_RE = re.compile(
 )
 
 
-def run_guards(*, user: dict[str, Any], deal: dict[str, Any], subject: str, body: str) -> dict[str, Any]:
-    """Run the deterministic G01–G15 policy over a drafted email."""
+def run_guards(
+    *,
+    user: dict[str, Any],
+    deal: dict[str, Any],
+    subject: str,
+    body: str,
+    contact_verified: bool | None = None,
+) -> dict[str, Any]:
+    """Run the deterministic G01–G15 policy over a drafted message.
+
+    ``contact_verified`` overrides the email check for recipients that are not email
+    addresses (validated phone numbers, calendar-only actions).
+    """
+    if contact_verified is None:
+        contact_verified = bool(EMAIL_RE.match(deal.get("contact_email") or ""))
     text = f"{subject}\n{body}"
     amounts = []
     for raw in _MONEY_RE.findall(text):
@@ -233,9 +277,9 @@ def run_guards(*, user: dict[str, Any], deal: dict[str, Any], subject: str, body
             permission_granted=True,
             amount_paise=0,
             daily_limit_paise=0,
-            contact_verified=bool(EMAIL_RE.match(deal.get("contact_email") or "")),
+            contact_verified=contact_verified,
             task_scope_matches=True,
-            required_facts_present=bool(deal.get("contact_name") and deal.get("contact_email")),
+            required_facts_present=bool(deal.get("contact_name") and (deal.get("contact_email") or contact_verified)),
             draft_grounded=draft_grounded,
             unverified_commitment=False,
             currency="USD" if _FOREIGN_CURRENCY_RE.search(text) else "INR",
@@ -280,8 +324,13 @@ def parse_draft(text: str, fallback_subject: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------
-def create_app(database: str | None = None, google_http: httpx.Client | None = None) -> FastAPI:
+def create_app(
+    database: str | None = None,
+    google_http: httpx.Client | None = None,
+    whatsapp_http: httpx.Client | None = None,
+) -> FastAPI:
     store = AppStore(database or default_database())
+    logger = logging.getLogger("cos.api")
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -402,6 +451,19 @@ def create_app(database: str | None = None, google_http: httpx.Client | None = N
         store.delete_session(token)
         return {"status": "signed_out"}
 
+    @app.delete("/api/account")
+    def delete_account(req: LoginRequest, user: dict = Depends(current_user)) -> dict[str, str]:
+        """Permanently delete the signed-in account and all of its data (password required)."""
+        confirmed = store.authenticate(req.email, req.password)
+        if confirmed is None or confirmed["id"] != user["id"]:
+            raise HTTPException(status_code=403, detail="Email or password is incorrect")
+        account = store.get_google_account(user["id"], include_tokens=True)
+        config = google.GoogleConfig.from_env()
+        if account and config and account["refresh_token"]:
+            google.GoogleClient(config, http=google_http).revoke(account["refresh_token"])
+        store.delete_user(user["id"])
+        return {"status": "deleted"}
+
     @app.get("/api/session")
     def get_session(token: str = Depends(session_token), user: dict = Depends(current_user)) -> dict[str, Any]:
         return {"session_id": token, "user": user}
@@ -414,7 +476,31 @@ def create_app(database: str | None = None, google_http: httpx.Client | None = N
     @app.put("/api/profile")
     def update_profile(req: ProfileUpdate, user: dict = Depends(current_user)) -> dict[str, Any]:
         updates = {k: (v.strip() if isinstance(v, str) else v) for k, v in req.model_dump(exclude_none=True).items()}
-        return store.update_user(user["id"], updates)
+        if "sandbox_emails" in updates:
+            emails = [e.lower() for e in split_list(updates["sandbox_emails"])]
+            bad = [e for e in emails if not EMAIL_RE.match(e)]
+            if bad:
+                raise HTTPException(status_code=422, detail=f"Not a valid email: {', '.join(bad)}")
+            updates["sandbox_emails"] = ", ".join(emails)
+        if "sandbox_phones" in updates:
+            try:
+                updates["sandbox_phones"] = ", ".join(whatsapp.normalize_phone(n) for n in split_list(updates["sandbox_phones"]))
+            except whatsapp.WhatsAppError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if updates.get("sandbox_enabled"):
+            emails = updates.get("sandbox_emails", user["sandbox_emails"])
+            phones = updates.get("sandbox_phones", user["sandbox_phones"])
+            if not split_list(emails) and not split_list(phones):
+                raise HTTPException(status_code=422, detail="Add at least one test email or phone before turning on test mode")
+        updated = store.update_user(user["id"], updates)
+        if "sandbox_enabled" in updates and updates["sandbox_enabled"] != user["sandbox_enabled"]:
+            store.add_activity(
+                user["id"],
+                type="settings",
+                title="Test mode turned on" if updates["sandbox_enabled"] else "Test mode turned off",
+                description=f"Test recipients: {updated['sandbox_emails'] or '-'} / {updated['sandbox_phones'] or '-'}",
+            )
+        return updated
 
     # ---------------------------------------------------------------- deals
     @app.get("/api/deals")
@@ -765,10 +851,16 @@ def create_app(database: str | None = None, google_http: httpx.Client | None = N
             raise HTTPException(status_code=423, detail="Kill switch is active. Release it to send.")
 
         timeline = [{"timestamp": now_iso, "event": "Founder approved hash-bound action"}]
-        if proposal["kind"] == "calendar":
-            receipt_status, detail, external_id = execute_meeting(user, proposal, timeline)
+        delivery: dict[str, str] = {}
+        executors = {
+            "calendar": execute_meeting,
+            "calendar_update": execute_calendar_update,
+            "calendar_delete": execute_calendar_delete,
+        }
+        if proposal["kind"] == "whatsapp":
+            receipt_status, detail, external_id = execute_whatsapp(user, proposal, timeline, delivery)
         else:
-            receipt_status, detail, external_id = execute_email(user, proposal, timeline)
+            receipt_status, detail, external_id = executors.get(proposal["kind"], execute_email)(user, proposal, timeline)
 
         receipt = store.create_receipt(
             user["id"],
@@ -783,9 +875,10 @@ def create_app(database: str | None = None, google_http: httpx.Client | None = N
                 "detail": detail,
                 "guards_checked": proposal["guards_checked"],
                 "timeline": timeline,
+                "delivery_status": delivery.get("status"),
             },
         )
-        done = receipt_status in ("sent", "booked")
+        done = receipt_status in ("sent", "booked", "updated", "deleted")
         new_status = receipt_status if done else "approved"
         store.update_proposal(
             user["id"], ref, {"status": new_status, "decided_at": now_iso, "receipt_id": receipt["receipt_id"]}
@@ -793,8 +886,10 @@ def create_app(database: str | None = None, google_http: httpx.Client | None = N
         if done and proposal["deal_id"]:
             store.update_deal(user["id"], proposal["deal_id"], {"last_contact_at": now_iso})
         titles = {
-            "booked": f"Meeting booked with {proposal['contact_name']}",
-            "sent": f"Email sent to {proposal['contact_name']}",
+            "booked": f"Calendar event created: {proposal['subject']}",
+            "sent": f"{'WhatsApp' if proposal['kind'] == 'whatsapp' else 'Email'} sent to {proposal['contact_name']}",
+            "updated": f"Calendar event updated: {proposal['subject']}",
+            "deleted": f"Calendar event deleted: {proposal['subject']}",
         }
         store.add_activity(
             user["id"],
@@ -842,7 +937,25 @@ def create_app(database: str | None = None, google_http: httpx.Client | None = N
         record_failure(user, proposal, timeline, message)
         return HTTPException(status_code=status_code, detail=f"{message} The draft is still pending.")
 
+    def sandboxed_email(user: dict[str, Any], proposal: dict[str, Any]) -> tuple[str, str, str, str]:
+        """(to, subject, body, note) — rerouted to the test recipients when sandbox mode is on."""
+        if not user["sandbox_enabled"]:
+            return proposal["contact_email"], proposal["subject"], proposal["rendered_body"], ""
+        targets = split_list(user["sandbox_emails"])
+        if not targets:
+            raise HTTPException(status_code=409, detail="Test mode is on but no test email recipients are set (Settings → Test mode).")
+        original = f"{proposal['contact_name']} <{proposal['contact_email']}>"
+        return (
+            ", ".join(targets),
+            f"[TEST → {proposal['contact_email']}] {proposal['subject']}",
+            f"[Test mode: this email was addressed to {original}]\n\n{proposal['rendered_body']}",
+            f" (test mode: delivered to {', '.join(targets)} instead of {proposal['contact_email']})",
+        )
+
     def execute_email(user: dict[str, Any], proposal: dict[str, Any], timeline: list) -> tuple[str, str, str | None]:
+        to_addr, subject, body, sandbox_note = sandboxed_email(user, proposal)
+        if sandbox_note:
+            timeline.append({"timestamp": iso(utcnow()), "event": "Test mode: rerouted to test recipients" + sandbox_note})
         if store.get_google_account(user["id"]) is not None:
             try:
                 client, token, account = google_session(user["id"])
@@ -850,30 +963,30 @@ def create_app(database: str | None = None, google_http: httpx.Client | None = N
                     token,
                     from_email=account["email"],
                     from_name=user["name"],
-                    to_email=proposal["contact_email"],
-                    subject=proposal["subject"],
-                    body=proposal["rendered_body"],
+                    to_email=to_addr,
+                    subject=subject,
+                    body=body,
                 )
             except (google.GoogleError, HTTPException) as exc:
                 raise google_failure(user, proposal, timeline, exc) from exc
             timeline.append({"timestamp": iso(utcnow()), "event": f"Sent via Gmail as {account['email']}"})
-            return "sent", f"Sent from {account['email']} via Gmail", message_id
+            return "sent", f"Sent from {account['email']} via Gmail{sandbox_note}", message_id
 
         smtp = store.get_email_settings(user["id"], include_secret=True)
         if smtp:
             try:
                 message_id = mailer.send_email(
                     smtp,
-                    to_email=proposal["contact_email"],
-                    subject=proposal["subject"],
-                    body=proposal["rendered_body"],
+                    to_email=to_addr,
+                    subject=subject,
+                    body=body,
                     from_name=user["name"],
                 )
             except mailer.MailerError as exc:
                 record_failure(user, proposal, timeline, str(exc))
                 raise HTTPException(status_code=502, detail=f"Send failed: {exc}. The draft is still pending.") from exc
             timeline.append({"timestamp": iso(utcnow()), "event": f"Sent via {smtp['host']} as {smtp['from_email']}"})
-            return "sent", f"Delivered to SMTP server {smtp['host']}", message_id
+            return "sent", f"Delivered to SMTP server {smtp['host']}{sandbox_note}", message_id
 
         timeline.append({"timestamp": iso(utcnow()), "event": "Approved; awaiting manual send (no email account connected)"})
         return (
@@ -884,6 +997,14 @@ def create_app(database: str | None = None, google_http: httpx.Client | None = N
 
     def execute_meeting(user: dict[str, Any], proposal: dict[str, Any], timeline: list) -> tuple[str, str, str | None]:
         payload = proposal["payload"] or {}
+        attendees = payload["attendees"] if "attendees" in payload else [proposal["contact_email"]]
+        sandbox_note = ""
+        if attendees and user["sandbox_enabled"]:
+            targets = split_list(user["sandbox_emails"])
+            if not targets:
+                raise HTTPException(status_code=409, detail="Test mode is on but no test email recipients are set (Settings → Test mode).")
+            sandbox_note = f" (test mode: invited {', '.join(targets)} instead of {', '.join(attendees)})"
+            attendees = targets
         try:
             client, token, account = google_session(user["id"])
             event = client.create_event(
@@ -893,17 +1014,63 @@ def create_app(database: str | None = None, google_http: httpx.Client | None = N
                 start_utc=payload["start_utc"],
                 end_utc=payload["end_utc"],
                 timezone=payload.get("timezone") or "UTC",
-                attendee_email=proposal["contact_email"],
+                attendees=attendees,
                 with_meet=bool(payload.get("with_meet", True)),
+                reminder_minutes=payload.get("reminder_minutes"),
             )
         except (google.GoogleError, HTTPException) as exc:
             raise google_failure(user, proposal, timeline, exc) from exc
         meet_link = event.get("hangoutLink")
-        detail = f"Invite sent to {proposal['contact_email']} from {account['email']}" + (
-            f" · Meet: {meet_link}" if meet_link else ""
-        )
+        detail = (
+            f"Invite sent to {', '.join(attendees)} from {account['email']}" if attendees else f"Added to {account['email']}'s calendar"
+        ) + (f" · Meet: {meet_link}" if meet_link else "") + sandbox_note
         timeline.append({"timestamp": iso(utcnow()), "event": f"Google Calendar event created ({event.get('htmlLink', 'primary calendar')})"})
         return "booked", detail, event.get("id")
+
+    def execute_whatsapp(
+        user: dict[str, Any], proposal: dict[str, Any], timeline: list, delivery: dict[str, str]
+    ) -> tuple[str, str, str | None]:
+        settings = store.get_whatsapp_settings(user["id"], include_secret=True)
+        if settings is None:
+            raise HTTPException(status_code=409, detail="WhatsApp is not set up. Add Twilio or Meta credentials in API Keys.")
+        targets, body, note = [proposal["contact_email"]], proposal["rendered_body"], ""
+        if user["sandbox_enabled"]:
+            targets = split_list(user["sandbox_phones"])
+            if not targets:
+                raise HTTPException(status_code=409, detail="Test mode is on but no test phone numbers are set (Settings → Test mode).")
+            body = f"[TEST → {proposal['contact_name']} {proposal['contact_email']}] {body}"
+            note = f" (test mode: sent to {', '.join(targets)} instead of {proposal['contact_email']})"
+        provider = whatsapp.PROVIDERS[settings["provider"]]
+        try:
+            client = whatsapp.WhatsAppClient(settings, http=whatsapp_http)
+            sent = [client.send_text(target, body) for target in targets]
+        except whatsapp.WhatsAppError as exc:
+            logger.warning("whatsapp send failed for %s: %s", proposal["ref"], exc)
+            record_failure(user, proposal, timeline, str(exc))
+            raise HTTPException(status_code=502, detail=f"WhatsApp send failed: {exc} The message is still pending.") from exc
+        delivery["status"] = sent[0].status
+        timeline.append({"timestamp": iso(utcnow()), "event": f"Accepted by {provider} (status: {sent[0].status})"})
+        return "sent", f"WhatsApp sent via {provider}{note}", ",".join(r.message_id for r in sent)
+
+    def execute_calendar_update(user: dict[str, Any], proposal: dict[str, Any], timeline: list) -> tuple[str, str, str | None]:
+        payload = proposal["payload"] or {}
+        try:
+            client, token, account = google_session(user["id"])
+            event = client.update_event(token, payload["event_id"], payload["changes"], notify=not user["sandbox_enabled"])
+        except (google.GoogleError, HTTPException) as exc:
+            raise google_failure(user, proposal, timeline, exc) from exc
+        timeline.append({"timestamp": iso(utcnow()), "event": "Google Calendar event updated"})
+        return "updated", f"Updated '{event.get('summary', '')}' on {account['email']}'s calendar", event.get("id")
+
+    def execute_calendar_delete(user: dict[str, Any], proposal: dict[str, Any], timeline: list) -> tuple[str, str, str | None]:
+        payload = proposal["payload"] or {}
+        try:
+            client, token, account = google_session(user["id"])
+            client.delete_event(token, payload["event_id"], notify=not user["sandbox_enabled"])
+        except (google.GoogleError, HTTPException) as exc:
+            raise google_failure(user, proposal, timeline, exc) from exc
+        timeline.append({"timestamp": iso(utcnow()), "event": "Google Calendar event deleted"})
+        return "deleted", f"Deleted '{payload.get('title', 'event')}' ({payload.get('when', '')}) from {account['email']}'s calendar", payload.get("event_id")
 
     # ---------------------------------------------------------------- records
     @app.get("/api/receipts")
@@ -957,9 +1124,12 @@ def create_app(database: str | None = None, google_http: httpx.Client | None = N
     # ---------------------------------------------------------------- chat
     def chat_system_prompt(user: dict[str, Any]) -> str:
         brief = build_brief(user)
+        zone = agent_tools.user_zone(user)
+        now_local = utcnow().astimezone(zone)
         deals = store.list_deals(user["id"])
         deal_lines = "\n".join(
-            f"- {d['id']}: {d['company']} — {d['title']} | contact {d['contact_name']} <{d['contact_email'] or 'no email'}>"
+            f"- {d['id']}: {d['company']} — {d['title']} | contact {d['contact_name']}"
+            f" <{d['contact_email'] or 'no email'}> {d.get('contact_phone') or 'no phone'}"
             f" | stage {d['stage']} | value {format_inr(d['value_inr'] * 100)}"
             f" | quiet {d['days_quiet'] if d['days_quiet'] is not None else '?'}d"
             f"{' | DO NOT CONTACT' if d['do_not_contact'] else ''}"
@@ -968,47 +1138,137 @@ def create_app(database: str | None = None, google_http: httpx.Client | None = N
         ) or "(no deals yet)"
         pending = store.list_proposals(user["id"], "pending")
         pending_lines = "\n".join(
-            f"- {p['ref']}: to {p['contact_name']} re '{p['subject']}' (verdict {p['policy_verdict']})" for p in pending[:20]
+            f"- {p['ref']} ({p['kind']}): {p['subject']} for {p['contact_name']} (verdict {p['policy_verdict']})" for p in pending[:20]
         ) or "(none)"
+        connected = []
+        if store.get_google_account(user["id"]):
+            connected.append("Google Calendar + Gmail")
+        if store.get_email_settings(user["id"]):
+            connected.append("SMTP email")
+        if store.get_whatsapp_settings(user["id"]):
+            connected.append("WhatsApp")
         return (
             f"You are the AI chief of staff for {user['name']}, {user['role']} at "
             f"{user['business_name'] or 'their company'}. Be concise, specific and practical. "
-            "Ground every claim about deals, money or status in the workspace data below; if the data "
-            "does not contain the answer, say so rather than guessing. Use INR (₹, Indian digit grouping) for money. "
-            "You cannot send emails yourself: to contact someone, tell the founder to use 'Draft follow-up' on the deal "
-            "in the Deals view, which creates a hash-bound draft that they approve in Approvals.\n\n"
-            f"Today (UTC): {utcnow().strftime('%Y-%m-%d')}\n"
-            f"Quiet-deal threshold: {user['quiet_days_threshold']} days; max autonomous discount: {user['max_discount_pct']}%\n"
-            f"Kill switch: {'ACTIVE' if user['kill_switch_active'] else 'off'}\n"
+            "Ground every claim about deals, money or status in the workspace data below or in tool results; "
+            "if you don't know, say so. Use INR (₹, Indian digit grouping) for money.\n\n"
+            "TOOLS: You can look up contacts and calendar events, and you can PREPARE emails, WhatsApp messages, "
+            "calendar events, reminders, event changes and deletions. Prepared actions are never executed by you: "
+            "the user confirms each one in the chat. Rules:\n"
+            "- Always use find_contacts (or the deal list) for email addresses and phone numbers; never invent them. "
+            "If a contact is missing or ambiguous, ask the user.\n"
+            "- Interpret relative times ('tomorrow at 3 PM') in the user's timezone and pass local date-times "
+            "like 2026-10-20T15:00. Use list_calendar_events to find event ids before updating or deleting.\n"
+            "- After preparing an action, briefly state the recipient, content and time, and ask the user to confirm "
+            "using the card below your message. Don't claim anything was sent until the user confirms.\n"
+            "- If a tool returns an error, explain it in plain words and suggest the fix.\n\n"
+            f"Now: {now_local.strftime('%A %d %B %Y, %H:%M')} ({zone.key})\n"
+            f"Connected services: {', '.join(connected) or 'none (email/WhatsApp/calendar actions need setup in API Keys)'}\n"
+            f"Test mode: {'ON (outbound is rerouted to test recipients)' if user['sandbox_enabled'] else 'off'}\n"
+            f"Quiet-deal threshold: {user['quiet_days_threshold']} days; max discount without review: {user['max_discount_pct']}%\n"
+            f"Kill switch: {'ACTIVE (do not prepare outbound actions)' if user['kill_switch_active'] else 'off'}\n"
             f"Open pipeline: {format_inr(brief['open_pipeline_inr'] * 100)}; won: {format_inr(brief['won_inr'] * 100)}; "
-            f"emails sent: {brief['emails_sent']}\n\n"
-            f"DEALS:\n{deal_lines}\n\nPENDING APPROVALS:\n{pending_lines}"
+            f"emails sent: {brief['emails_sent']}\n"
+            f"Signature to end emails with: {user['signature'] or user['name']}\n\n"
+            f"DEALS / CONTACTS:\n{deal_lines}\n\nPENDING ACTIONS:\n{pending_lines}"
         )
+
+    def summarize_tool_call(call: dict[str, Any]) -> dict[str, Any]:
+        output = call.get("output") or {}
+        if not call["ok"]:
+            summary = str(output.get("error", "failed")) if isinstance(output, dict) else "failed"
+        elif "action_ref" in output:
+            summary = f"prepared {output['action_ref']} ({output.get('policy_verdict', '')})"
+        elif "count" in output:
+            summary = f"{output['count']} result(s)"
+        else:
+            summary = "ok"
+        return {"name": call["name"], "ok": call["ok"], "summary": summary[:300]}
 
     @app.post("/api/chat")
     def chat(req: ChatRequest, user: dict = Depends(current_user)) -> dict[str, Any]:
         text = req.message.strip()
         if not text:
             raise HTTPException(status_code=422, detail="Message cannot be empty")
-        llm_config_for(user)  # 409 before persisting anything if no key
+        config = llm_config_for(user)  # 409 before persisting anything if no key
         session = store.get_chat_session(user["id"], req.session_id) if req.session_id else None
         if session is None:
             session = store.create_chat_session(user["id"], text[:60])
         history = store.list_chat_messages(user["id"], session["id"])[-20:]
         messages = [{"role": m["role"], "content": m["content"]} for m in history]
         messages.append({"role": "user", "content": text})
-        result = call_llm(user, purpose="chat", system=chat_system_prompt(user), messages=messages)
+
+        toolbox = agent_tools.AgentToolbox(
+            store=store,
+            user=user,
+            google_session=google_session,
+            run_guards=run_guards,
+            content_hash=proposal_content_hash,
+        )
+        try:
+            result = llm.run_agent(
+                config,
+                system=chat_system_prompt(user),
+                messages=messages,
+                tools=agent_tools.TOOLS,
+                handle_tool=toolbox.handle,
+            )
+        except llm.LLMError as exc:
+            logger.warning("chat agent failed: %s", exc)
+            if toolbox.actions:
+                refs = ", ".join(a["ref"] for a in toolbox.actions)
+                raise HTTPException(status_code=502, detail=f"{exc} (Already prepared {refs}; review it in Approvals.)") from exc
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        store.record_usage(
+            user["id"],
+            provider=result.provider,
+            model=result.model,
+            purpose="chat",
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+        )
+        tool_calls = [summarize_tool_call(c) for c in result.tool_calls]
         user_msg = store.add_chat_message(user["id"], session["id"], "user", text)
         reply = store.add_chat_message(
-            user["id"], session["id"], "assistant", result.text or "(empty response)", result.provider, result.model
+            user["id"],
+            session["id"],
+            "assistant",
+            result.text or "(empty response)",
+            result.provider,
+            result.model,
+            meta={"actions": [a["ref"] for a in toolbox.actions], "tool_calls": tool_calls} if result.tool_calls else None,
         )
+        reply["actions"] = [store.get_proposal(user["id"], a["ref"]) for a in toolbox.actions]
         return {
             "session_id": session["id"],
             "session_title": session["title"],
             "user_message": user_msg,
             "reply": reply,
-            "usage": {"input_tokens": result.input_tokens, "output_tokens": result.output_tokens},
+            "actions": reply["actions"],
+            "tool_calls": tool_calls,
+            "usage": {"input_tokens": result.input_tokens, "output_tokens": result.output_tokens, "steps": result.steps},
         }
+
+    # ---------------------------------------------------------------- agent tools over HTTP (used by the MCP server)
+    @app.get("/api/agent/tools")
+    def list_agent_tools(user: dict = Depends(current_user)) -> dict[str, Any]:
+        return {"tools": agent_tools.TOOLS}
+
+    @app.post("/api/agent/tools/{name}")
+    def run_agent_tool(name: str, req: AgentToolRequest, user: dict = Depends(current_user)) -> dict[str, Any]:
+        """Run one agent tool for the signed-in user. Write tools only *prepare* actions;
+        the user still confirms them in the app (Approvals or chat)."""
+        if name not in {t["name"] for t in agent_tools.TOOLS}:
+            raise HTTPException(status_code=404, detail=f"Unknown tool '{name}'")
+        toolbox = agent_tools.AgentToolbox(
+            store=store,
+            user=user,
+            google_session=google_session,
+            run_guards=run_guards,
+            content_hash=proposal_content_hash,
+        )
+        output, is_error = toolbox.handle(name, req.arguments)
+        return {"ok": not is_error, "result": output, "actions": toolbox.actions}
 
     @app.get("/api/chat/sessions")
     def list_chat_sessions(user: dict = Depends(current_user)) -> dict[str, Any]:
@@ -1019,7 +1279,11 @@ def create_app(database: str | None = None, google_http: httpx.Client | None = N
         session = store.get_chat_session(user["id"], session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="Chat not found")
-        return {**session, "messages": store.list_chat_messages(user["id"], session_id)}
+        messages = store.list_chat_messages(user["id"], session_id)
+        for message in messages:
+            refs = (message.get("meta") or {}).get("actions") or []
+            message["actions"] = [p for p in (store.get_proposal(user["id"], ref) for ref in refs) if p]
+        return {**session, "messages": messages}
 
     @app.put("/api/chat/sessions/{session_id}")
     def rename_chat_session(session_id: str, req: RenameChatRequest, user: dict = Depends(current_user)) -> dict[str, str]:
@@ -1183,6 +1447,78 @@ def create_app(database: str | None = None, google_http: httpx.Client | None = N
         )
         return {"active": updated["kill_switch_active"], "reason": updated["kill_switch_reason"]}
 
+    # ---------------------------------------------------------------- settings: WhatsApp
+    def whatsapp_view(user_id: str) -> dict[str, Any]:
+        settings = store.get_whatsapp_settings(user_id)
+        return {"configured": settings is not None, "settings": settings, "providers": whatsapp.PROVIDERS}
+
+    @app.get("/api/settings/whatsapp")
+    def get_whatsapp_settings(user: dict = Depends(current_user)) -> dict[str, Any]:
+        return whatsapp_view(user["id"])
+
+    @app.put("/api/settings/whatsapp")
+    def put_whatsapp_settings(req: WhatsAppSettingsUpdate, user: dict = Depends(current_user)) -> dict[str, Any]:
+        account_id = req.account_id.strip()
+        from_number = ""
+        if req.provider == "twilio":
+            if not re.fullmatch(r"AC[0-9a-fA-F]{32}", account_id):
+                raise HTTPException(status_code=422, detail="Twilio Account SID looks like AC followed by 32 hex characters")
+            try:
+                from_number = whatsapp.normalize_phone(req.from_number)
+            except whatsapp.WhatsAppError as exc:
+                raise HTTPException(status_code=422, detail=f"WhatsApp sender: {exc}") from exc
+        elif not account_id.isdigit():
+            raise HTTPException(status_code=422, detail="Meta Phone Number ID is numeric (WhatsApp Manager → API Setup)")
+        existing = store.get_whatsapp_settings(user["id"])
+        token = (req.token or "").strip() or None
+        if token is None and not (existing and existing["has_token"] and existing["provider"] == req.provider):
+            raise HTTPException(status_code=422, detail="Enter the auth token / access token")
+        store.upsert_whatsapp_settings(user["id"], provider=req.provider, account_id=account_id, token=token, from_number=from_number)
+        store.add_activity(user["id"], type="settings", title=f"WhatsApp ({whatsapp.PROVIDERS[req.provider]}) saved")
+        return whatsapp_view(user["id"])
+
+    @app.delete("/api/settings/whatsapp")
+    def delete_whatsapp_settings(user: dict = Depends(current_user)) -> dict[str, Any]:
+        store.delete_whatsapp_settings(user["id"])
+        store.add_activity(user["id"], type="settings", title="WhatsApp credentials removed")
+        return whatsapp_view(user["id"])
+
+    @app.post("/api/settings/whatsapp/test")
+    def test_whatsapp_settings(user: dict = Depends(current_user)) -> dict[str, Any]:
+        settings = store.get_whatsapp_settings(user["id"], include_secret=True)
+        if settings is None:
+            raise HTTPException(status_code=409, detail="Save WhatsApp credentials first")
+        try:
+            ok, message = whatsapp.WhatsAppClient(settings, http=whatsapp_http).test()
+        except whatsapp.WhatsAppError as exc:
+            ok, message = False, str(exc)
+        store.record_whatsapp_test(user["id"], ok, message)
+        return {"ok": ok, "message": message, "tested_at": iso(utcnow())}
+
+    @app.post("/api/receipts/{receipt_id}/refresh-delivery")
+    def refresh_delivery(receipt_id: str, user: dict = Depends(current_user)) -> dict[str, Any]:
+        receipt = store.get_receipt(user["id"], receipt_id)
+        if receipt is None:
+            raise HTTPException(status_code=404, detail="Receipt not found")
+        if receipt["action_kind"] != "whatsapp" or not receipt["external_id"]:
+            raise HTTPException(status_code=409, detail="Delivery status is tracked for sent WhatsApp messages only")
+        settings = store.get_whatsapp_settings(user["id"], include_secret=True)
+        if settings is None:
+            raise HTTPException(status_code=409, detail="WhatsApp is not set up")
+        try:
+            client = whatsapp.WhatsAppClient(settings, http=whatsapp_http)
+            statuses = [client.fetch_status(mid) for mid in receipt["external_id"].split(",") if mid]
+        except whatsapp.WhatsAppError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        status_text = ", ".join(s for s, _ in statuses)
+        errors = "; ".join(e for _, e in statuses if e)
+        store.update_receipt_delivery(
+            user["id"], receipt["receipt_id"], status_text, f"Delivery status: {status_text}" + (f" ({errors})" if errors else "")
+        )
+        updated = store.get_receipt(user["id"], receipt["receipt_id"])
+        assert updated is not None
+        return updated
+
     # ---------------------------------------------------------------- integrations: Google
     def app_base_url() -> str:
         return os.getenv("APP_BASE_URL", "http://localhost:5173").strip().rstrip("/")
@@ -1328,6 +1664,7 @@ def create_app(database: str | None = None, google_http: httpx.Client | None = N
         key_entry = next((k for k in store.list_api_keys(user["id"]) if k["provider"] == provider), None)
         smtp = store.get_email_settings(user["id"])
         google_account = store.get_google_account(user["id"])
+        wa = store.get_whatsapp_settings(user["id"])
 
         def test_status(entry: dict[str, Any] | None) -> str:
             if entry is None:
@@ -1374,12 +1711,24 @@ def create_app(database: str | None = None, google_http: httpx.Client | None = N
                     )
                 ),
             },
+            "whatsapp": {
+                "status": test_status(wa),
+                "detail": f"{whatsapp.PROVIDERS[wa['provider']]} · {wa['from_number'] or wa['account_id']}" if wa else "Add Twilio or Meta credentials in API Keys",
+            },
+            "test_mode": {
+                "status": "degraded" if user["sandbox_enabled"] else "ready",
+                "detail": (
+                    f"ON: outbound goes to {user['sandbox_emails'] or 'no emails'} / {user['sandbox_phones'] or 'no phones'}"
+                    if user["sandbox_enabled"]
+                    else "Off: messages go to real recipients"
+                ),
+            },
             "kill_switch": {
                 "status": "degraded" if user["kill_switch_active"] else "ready",
                 "detail": user["kill_switch_reason"] or ("Engaged" if user["kill_switch_active"] else "Released"),
             },
         }
-        optional = {"email", "google"}  # either may be unused when the other sends mail
+        optional = {"email", "google", "whatsapp", "test_mode"}  # either may be unused when the other sends mail
         overall = (
             "ready"
             if all(c["status"] == "ready" for name, c in components.items() if name not in optional)

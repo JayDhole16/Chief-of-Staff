@@ -70,7 +70,19 @@ def fake_llm(monkeypatch):
             text = f"echo: {last}"
         return llm.LLMResult(text=text, provider=config.provider, model=config.model, input_tokens=11, output_tokens=7)
 
+    def fake_run_agent(config, *, system, messages, tools, handle_tool, **kwargs):
+        calls.append({"config": config, "system": system, "messages": messages, "tools": tools})
+        return llm.AgentResult(
+            text=f"echo: {messages[-1]['content']}",
+            provider=config.provider,
+            model=config.model,
+            input_tokens=11,
+            output_tokens=7,
+            steps=1,
+        )
+
     monkeypatch.setattr(llm, "complete", fake_complete)
+    monkeypatch.setattr(llm, "run_agent", fake_run_agent)
     return calls
 
 

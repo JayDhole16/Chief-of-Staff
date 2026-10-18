@@ -61,6 +61,10 @@ jobs:
           backend/services/app_store.py
           backend/services/llm.py
           backend/services/mailer.py
+          backend/services/whatsapp.py
+          backend/services/google.py
+          backend/api/agent_tools.py
+          backend/mcp_server.py
           backend/db/migrate.py
           backend/services/executor.py
           backend/services/tasks.py
@@ -69,6 +73,9 @@ jobs:
           backend/worker/health.py
           tests/test_config.py
           tests/test_api.py
+          tests/test_agent.py
+          tests/test_google.py
+          scripts/sanity_check.py
           tests/test_tasks_service.py
           tests/test_policy_engine.py
           tests/test_tasks_postgres.py
